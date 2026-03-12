@@ -1,0 +1,25 @@
+[Rendering]
+RenderDistanceThreshold = 24
+ChunkSize = 16
+WorldSeed = 42
+[Physics]
+BaseMovementSpeed = 150.0
+SprintMultiplier = 3.0
+JumpForce = 8.0
+Gravity = 25.0
+Drag = 10.0
+[Window]
+Width = 1280
+Height = 720
+Title = "VulkanMC Engine"
+[Controls]
+Forward = 87
+Backward = 83
+Left = 65
+Right = 68
+Jump = 32
+Sprint = 340
+Escape = 256
+QuickExit = 261
+[Hardware]
+PreferredGpuName = "AMD Radeon RX 6500 (RADV NAVI24)"
