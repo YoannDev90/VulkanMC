@@ -1,15 +1,19 @@
 [Rendering]
-RenderDistanceThreshold = 24
-ChunkSize = 16
+RenderDistanceThreshold = 56
+ChunkSize = 8
 WorldSeed = 42
 [Physics]
 BaseMovementSpeed = 150.0
-SprintMultiplier = 3.0
-JumpForce = 8.0
+SprintMultiplier = 30.0
+JumpForce = 0.0
 Gravity = 25.0
 Drag = 10.0
+[Logging]
+Level = "Info"
 [Window]
-Width = 1280
+Fullscreen = false # Overrides Maximized if set to true
+Maximized = true # Override Width and Height settings if set to true
+Width = 1280 
 Height = 720
 Title = "VulkanMC Engine"
 [Controls]

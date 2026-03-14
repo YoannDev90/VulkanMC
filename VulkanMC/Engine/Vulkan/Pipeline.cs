@@ -5,7 +5,7 @@ using Silk.NET.Vulkan.Extensions.KHR;
 using Silk.NET.Maths;
 using StbImageSharp;
 
-namespace VulkanMC;
+namespace VulkanMC.Engine.Vulkan;
 
 public partial class VulkanEngine
 {

@@ -3,7 +3,7 @@ using System.IO;
 using Tomlyn;
 using Silk.NET.Input;
 
-namespace VulkanMC;
+namespace VulkanMC.Config;
 
 public class ConfigData
 {
@@ -12,6 +12,12 @@ public class ConfigData
     public WindowConfig Window { get; set; } = new();
     public ControlsConfig Controls { get; set; } = new();
     public HardwareConfig Hardware { get; set; } = new();
+    public LoggingConfig Logging { get; set; } = new();
+}
+
+public class LoggingConfig
+{
+    public string Level { get; set; } = "Info";
 }
 
 public class RenderingConfig
@@ -74,11 +80,16 @@ public static class Config
             {
                 string toml = File.ReadAllText(ConfigPath);
                 var model = Tomlyn.TomlSerializer.Deserialize<ConfigData>(toml);
-                if (model != null) Data = model;
+                if (model != null)
+                {
+                    Data = model;
+                    if (Enum.TryParse<LogLevel>(Data.Logging.Level, true, out var level))
+                        Logger.MinimumLevel = level;
+                }
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"[ERROR] Failed to load config: {ex.Message}. Using defaults.");
+                Logger.Error($"Failed to load config: {ex.Message}. Using defaults.");
                 Data = new ConfigData();
             }
         }
@@ -98,7 +109,7 @@ public static class Config
         }
         catch (Exception ex)
         {
-            Console.WriteLine($"[ERROR] Failed to save config: {ex.Message}");
+            Logger.Error($"Failed to save config: {ex.Message}");
         }
     }
 }

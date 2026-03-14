@@ -1,4 +1,4 @@
-namespace VulkanMC;
+namespace VulkanMC.Terrain;
 
 public class SimplexNoise
 {

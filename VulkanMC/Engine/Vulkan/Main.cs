@@ -6,7 +6,7 @@ using System.Collections.Concurrent;
 using Buffer = Silk.NET.Vulkan.Buffer;
 using Semaphore = Silk.NET.Vulkan.Semaphore;
 
-namespace VulkanMC;
+namespace VulkanMC.Engine.Vulkan;
 
 public partial class VulkanEngine : IDisposable
 {
@@ -42,6 +42,16 @@ public partial class VulkanEngine : IDisposable
     private RenderPass _renderPass;
     private PipelineLayout _pipelineLayout;
     private Pipeline _graphicsPipeline;
+    private PipelineLayout _textPipelineLayout;
+    private Pipeline _textPipeline;
+    private DescriptorSetLayout _textSetLayout;
+    private DescriptorSet _textDescriptorSet;
+    private Image _textAtlasImage;
+    private DeviceMemory _textAtlasMemory;
+    private ImageView _textAtlasView;
+    private Buffer _textVertexBuffer;
+    private DeviceMemory _textVertexMemory;
+
     private Framebuffer[] _framebuffers = [];
     private CommandPool _commandPool;
     private CommandBuffer[] _commandBuffers = [];
@@ -75,6 +85,12 @@ public partial class VulkanEngine : IDisposable
     private float _verticalVelocity = 0;
     private bool _isPaused = false;
     private int _frameCount = 0;
+    private double _fpsTimer = 0;
+    private int _lastFps = 0;
+    private int _fpsCounter = 0;
+    private DebugTextOverlay _debugOverlay = new();
+    // Supprimé car incompatible avec Vulkan
+    // private Silk.NET.OpenGL.Extensions.ImGui.ImGuiController? _imGuiController;
 
     private ConcurrentDictionary<Vector2D<int>, ChunkMesh> _chunkMeshes = new();
     private ConcurrentQueue<Action> _pendingUploads = new();

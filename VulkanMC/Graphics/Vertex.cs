@@ -3,7 +3,7 @@ using System.Runtime.InteropServices;
 using Silk.NET.Maths;
 using Silk.NET.Vulkan;
 
-namespace VulkanMC;
+namespace VulkanMC.Graphics;
 
 public struct Vertex
 {

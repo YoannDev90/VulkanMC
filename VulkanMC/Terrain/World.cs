@@ -1,7 +1,7 @@
 using System.Collections.Generic;
 using Silk.NET.Maths;
 
-namespace VulkanMC;
+namespace VulkanMC.Terrain;
 
 public class World
 {
@@ -28,7 +28,22 @@ public class World
 
         int h = (int)(noiseValue * 25.0f + detailValue * 5.0f) + 5;
         if (h > 60) h = 60;
-        return (float)h;
+        return h;
+    }
+
+    private int[,] GenerateHeightmap(int offsetX, int offsetZ, int width, int depth)
+    {
+        var heights = new int[width, depth];
+
+        for (int x = 0; x < width; x++)
+        {
+            for (int z = 0; z < depth; z++)
+            {
+                heights[x, z] = (int)GetHeightAt(offsetX + x, offsetZ + z);
+            }
+        }
+
+        return heights;
     }
 
     public (Vertex[] vertices, uint[] indices) GenerateChunk(int chunkX, int chunkZ, int width, int depth, int lod = 0)
@@ -45,13 +60,12 @@ public class World
         int step = (int)MathF.Pow(2, lod);
         
         // 1. Générer la carte des hauteurs avec plus de variété
-        int[,] heights = new int[width, depth];
+        int[,] heights = GenerateHeightmap(offsetX, offsetZ, width, depth);
+
         for (int x = 0; x < width; x++)
         {
             for (int z = 0; z < depth; z++)
             {
-                heights[x, z] = (int)GetHeightAt(offsetX + x, offsetZ + z);
-
                 // Only add to collision list if LOD 0
                 if (lod == 0)
                 {

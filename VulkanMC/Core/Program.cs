@@ -1,4 +1,4 @@
-﻿namespace VulkanMC;
+﻿namespace VulkanMC.Core;
 
 class Program
 {

@@ -6,6 +6,7 @@ layout(location = 2) in vec2 inTexCoord;
 
 layout(location = 0) out vec3 fragColor;
 layout(location = 1) out vec2 fragTexCoord;
+layout(location = 2) out vec3 fragWorldPos;
 
 layout(push_constant) uniform PushConstant {
     mat4 mvp;
@@ -15,4 +16,5 @@ void main() {
     gl_Position = pc.mvp * vec4(inPosition, 1.0);
     fragColor = inColor;
     fragTexCoord = inTexCoord;
+    fragWorldPos = inPosition;
 }

@@ -4,7 +4,7 @@ using Silk.NET.Vulkan;
 using StbImageSharp;
 using Buffer = Silk.NET.Vulkan.Buffer;
 
-namespace VulkanMC;
+namespace VulkanMC.Engine.Vulkan;
 
 public partial class VulkanEngine
 {

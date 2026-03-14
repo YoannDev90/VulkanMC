@@ -1,14 +1,14 @@
 # VulkanMC
 
-A high-performance Minecraft-inspired voxel engine written in C# using **Silk.NET** and **Vulkan**.
+A Minecraft-inspired voxel engine written in C# with Silk.NET and Vulkan.
 
 ## Features
 
-- **Vulkan Rendering**: Modern graphics API for maximum performance.
-- **Infinite Terrain (WIP)**: Procedural world generation using Simplex Noise.
-- **Texture Atlas**: Optimized texture management for multiple block types (Grass, Stone, Snow, Dirt).
-- **Smooth Physics**: Player movement with gravity, collisions, and configurable auto-jump.
-- **LOD System**: Efficient Level of Detail for distant terrain chunks.
+- Vulkan renderer with partial-engine split (`Engine/Vulkan/*`).
+- Procedural terrain generation (Simplex noise).
+- Chunk meshing with runtime streaming.
+- In-game debug text overlay (FPS, CPU/GPU/RAM, position, chunk).
+- Configurable behavior through `VulkanMC/config.toml`.
 
 ## Screenshots
 
@@ -35,19 +35,29 @@ A high-performance Minecraft-inspired voxel engine written in C# using **Silk.NE
    dotnet run --project VulkanMC/VulkanMC.csproj
    ```
 
+3. Regenerate the repository tree file:
+   ```bash
+   bash VulkanMC/tree.sh
+   ```
+
 ## Controls
 
 - **WASD**: Move
 - **Space**: Jump
 - **Mouse**: Look around
-- **Esc**: Exit
+- **Esc**: Toggle pause/cursor lock
 
 ## Project Structure
 
-- `World.cs`: Terrain generation and block logic.
-- `VulkanEngine.*.cs`: Partial classes handling the Vulkan pipeline, resource management, and rendering loop.
-- `Shaders/`: GLSL shader sources.
-- `Textures/`: Block assets.
+- `VulkanMC/Core/`: app entrypoint and logging.
+- `VulkanMC/Config/`: TOML configuration model/loader.
+- `VulkanMC/Engine/Vulkan/`: Vulkan engine partial implementation.
+- `VulkanMC/Terrain/`: terrain generation and world logic.
+- `VulkanMC/UI/`: debug text overlay.
+- `VulkanMC/Platform/`: OS-specific metrics providers.
+- `VulkanMC/Graphics/`: render-facing geometry structs.
+- `VulkanMC/Shaders/`: GLSL sources and SPIR-V binaries.
+- `VulkanMC/tree.sh`: generates `VulkanMC/tree.txt` while respecting `.gitignore`.
 
 ## License
 
