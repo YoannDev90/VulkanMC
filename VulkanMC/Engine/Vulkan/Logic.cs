@@ -1,19 +1,27 @@
 using System.Runtime.InteropServices;
+using System.Runtime.CompilerServices;
+using System.IO;
+using System.Threading.Tasks;
+using System.Linq;
 using Silk.NET.Input;
 using Silk.NET.Maths;
 using Silk.NET.Vulkan;
+using AppConfig = VulkanMC.Config.Config;
 
 namespace VulkanMC.Engine.Vulkan;
 
 public partial class VulkanEngine
 {
+    private int _lastFootBlockX = int.MinValue;
+    private int _lastFootBlockZ = int.MinValue;
+
     private void OnUpdate(double dt)
     {
         _fpsTimer += dt;
         _fpsCounter++;
         
-        int cx = (int)MathF.Floor(_cameraPos.X / Config.Data.Rendering.ChunkSize);
-        int cz = (int)MathF.Floor(_cameraPos.Z / Config.Data.Rendering.ChunkSize);
+        int cx = (int)MathF.Floor(_cameraPos.X / AppConfig.Data.Rendering.ChunkSize);
+        int cz = (int)MathF.Floor(_cameraPos.Z / AppConfig.Data.Rendering.ChunkSize);
         _debugOverlay.Update(dt, _cameraPos, cx, cz);
 
         if (_fpsTimer >= 1.0)
@@ -24,15 +32,24 @@ public partial class VulkanEngine
             
             if (_window != null)
             {
-                _window.Title = "VulkanMC";
+                _window.Title = AppConfig.Data.Debug.ShowFpsInWindowTitle
+                    ? $"{AppConfig.Data.Window.Title} | FPS: {_lastFps}"
+                    : AppConfig.Data.Window.Title;
             }
         }
 
-        if (_input!.Keyboards[0].IsKeyPressed(Key.Escape))
+        var controls = AppConfig.Data.Controls;
+        if (_input!.Keyboards[0].IsKeyPressed(controls.EscapeKey))
         {
             _isPaused = !_isPaused;
             _input.Mice[0].Cursor.CursorMode = _isPaused ? CursorMode.Normal : CursorMode.Raw;
             Thread.Sleep(200);
+        }
+        if (_input.Keyboards[0].IsKeyPressed(controls.QuickExitKey))
+        {
+            Logger.Info("Quick exit requested by keybind.");
+            _window?.Close();
+            return;
         }
         if (_isPaused) return;
 
@@ -44,99 +61,193 @@ public partial class VulkanEngine
         float dy = (float)(_input.Mice[0].Position.Y - _lastMouseY.Value);
         _lastMouseX = _input.Mice[0].Position.X;
         _lastMouseY = _input.Mice[0].Position.Y;
+
+        float mouseSensitivity = AppConfig.Data.Camera.MouseSensitivity;
         
-        _yaw += dx * 0.1f;
-        _pitch -= dy * 0.1f;
-        _pitch = Math.Clamp(_pitch, -89f, 89f);
+        _yaw += dx * mouseSensitivity;
+        _pitch -= dy * mouseSensitivity;
+        _pitch = Math.Clamp(_pitch, AppConfig.Data.Camera.MinPitch, AppConfig.Data.Camera.MaxPitch);
 
         Vector3D<float> f;
         f.X = MathF.Cos(MathF.PI / 180 * _yaw) * MathF.Cos(MathF.PI / 180 * _pitch);
         f.Y = MathF.Sin(MathF.PI / 180 * _pitch);
         f.Z = MathF.Sin(MathF.PI / 180 * _yaw) * MathF.Cos(MathF.PI / 180 * _pitch);
         _cameraFront = Vector3D.Normalize(f);
+
+        if (AppConfig.Data.Rendering.EnableEntities)
+        {
+            foreach (var entity in _entities)
+            {
+                entity.Update((float)dt);
+            }
+        }
     }
 
+    // Debug frames counter to emit detailed physics traces right after spawn
+    private int _physicsDebugFrames = 120;
     private void UpdatePositionWithCollisions(float dt)
     {
         var k = _input!.Keyboards[0];
-        float s = 10f * dt;
+        var physics = AppConfig.Data.Physics;
+
+        // Clamp dt for physics to avoid huge jumps when the update loop experiences a large frame
+        // time (e.g., when the app is resumed or a long GC pause occurs). Use a small maximum
+        // step so gravity and movement remain stable.
+        float simDt = MathF.Min(dt, 0.05f);
+
+        var controls = AppConfig.Data.Controls;
+        float moveSpeed = physics.BaseMovementSpeed;
+        bool isCrouching = k.IsKeyPressed(controls.CrouchKey);
+        bool isSprinting = k.IsKeyPressed(controls.SprintKey) && !isCrouching;
+        if (isSprinting)
+        {
+            moveSpeed *= Math.Max(1.0f, physics.SprintMultiplier);
+        }
+        if (isCrouching)
+        {
+            moveSpeed *= Math.Max(0.01f, physics.CrouchMultiplier);
+        }
+
+        float s = moveSpeed * simDt;
         var nextPos = _cameraPos;
         var forward = new Vector3D<float>(_cameraFront.X, 0, _cameraFront.Z);
         if (forward.Length != 0) forward = Vector3D.Normalize(forward);
         var right = Vector3D.Normalize(Vector3D.Cross(forward, Vector3D<float>.UnitY));
 
-        if (k.IsKeyPressed(Key.W)) nextPos += forward * s;
-        if (k.IsKeyPressed(Key.S)) nextPos -= forward * s;
-        if (k.IsKeyPressed(Key.A)) nextPos -= right * s;
-        if (k.IsKeyPressed(Key.D)) nextPos += right * s;
-        if (k.IsKeyPressed(Key.Space)) nextPos.Y += s;
-        if (k.IsKeyPressed(Key.ShiftLeft)) nextPos.Y -= s;
+        if (k.IsKeyPressed(controls.ForwardKey)) nextPos += forward * s;
+        if (k.IsKeyPressed(controls.BackwardKey)) nextPos -= forward * s;
+        if (k.IsKeyPressed(controls.LeftKey)) nextPos -= right * s;
+        if (k.IsKeyPressed(controls.RightKey)) nextPos += right * s;
 
-        if (Config.Data.Physics.GravityEnabled)
+        if (physics.GravityEnabled)
         {
-            _verticalVelocity -= 20f * dt;
-            nextPos.Y += _verticalVelocity * dt;
-            
-            // Check collisions at feet and slightly below
+            if (_physicsDebugFrames > 0)
+            {
+                Logger.Info($"[PHYSICS DEBUG] Pre-gravity: dt={dt:F4} simDt={simDt:F4} y={nextPos.Y:F3} vel={_verticalVelocity:F3}");
+            }
+            // If within spawn grace window, clamp vertical velocity to avoid large negative impulses
+            long nowTick = Environment.TickCount64;
+            if (nowTick < _spawnGraceUntil)
+            {
+                _verticalVelocity = Math.Clamp(_verticalVelocity, -2.0f, 2.0f);
+            }
+
+            // Apply gravity
+            _verticalVelocity -= physics.Gravity * simDt;
+            // clamp maximum per-frame vertical travel to avoid tunnelling or extreme teleport
+            float dy = _verticalVelocity * simDt;
+            const float maxDyPerFrame = -10.0f;
+            if (dy < maxDyPerFrame) dy = maxDyPerFrame;
+            nextPos.Y += dy;
+
+            if (_physicsDebugFrames > 0)
+            {
+                Logger.Info($"[PHYSICS DEBUG] Post-gravity: y={nextPos.Y:F3} vel={_verticalVelocity:F3}");
+                _physicsDebugFrames--;
+            }
+
+            // Use a consistent eye height for the camera (meters/blocks)
+            const float eyeHeight = 1.62f;
+            // Subtract a tiny epsilon before flooring so that being exactly at integer heights
+            // (eye sitting at spawnH + eyeHeight) maps to the block below as expected.
+            float feetY = nextPos.Y - eyeHeight - 0.001f;
             int blockX = (int)MathF.Floor(nextPos.X);
-            int blockY = (int)MathF.Floor(nextPos.Y - 1.8f);
+            int blockY = (int)MathF.Floor(feetY);
             int blockZ = (int)MathF.Floor(nextPos.Z);
 
             bool grounded = false;
-            // Vérifier les collisions aux pieds (Y-1.8f) et légèrement au-dessus (Y-1.5f) pour plus de stabilité
-            if (_world != null && (_world.IsBlockAt(blockX, blockY, blockZ) || 
-                                   _world.IsBlockAt((int)MathF.Floor(nextPos.X + 0.3f), blockY, (int)MathF.Floor(nextPos.Z)) ||
-                                   _world.IsBlockAt((int)MathF.Floor(nextPos.X - 0.3f), blockY, (int)MathF.Floor(nextPos.Z)) ||
-                                   _world.IsBlockAt((int)MathF.Floor(nextPos.X), blockY, (int)MathF.Floor(nextPos.Z + 0.3f)) ||
-                                   _world.IsBlockAt((int)MathF.Floor(nextPos.X), blockY, (int)MathF.Floor(nextPos.Z - 0.3f))))
+            if (_world != null)
             {
-                // On place les pieds exactement au-dessus du bloc (Y = blockY + 1)
-                // Donc la caméra (tête) est à Y = blockY + 1 + 1.8f = blockY + 2.8f
-                // J'ajoute un très léger offset (0.01f) car sinon IsBlockAt pourrait renvoyer vrai au frame suivant
-                nextPos.Y = (float)blockY + 2.81f; 
-                _verticalVelocity = 0;
-                grounded = true;
-            }
-            
-            // Safety: Floor at Y=2.0 to stop infinite fall if world isn't loaded
-            if (nextPos.Y < 2.0f)
-            {
-                nextPos.Y = 2.0f;
-                _verticalVelocity = 0;
-                grounded = true;
+                // Check nearby blocks around feet for robust collision
+                bool footBlock = _world.IsBlockAt(blockX, blockY, blockZ)
+                    || _world.IsBlockAt((int)MathF.Floor(nextPos.X + 0.3f), blockY, (int)MathF.Floor(nextPos.Z))
+                    || _world.IsBlockAt((int)MathF.Floor(nextPos.X - 0.3f), blockY, (int)MathF.Floor(nextPos.Z))
+                    || _world.IsBlockAt((int)MathF.Floor(nextPos.X), blockY, (int)MathF.Floor(nextPos.Z + 0.3f))
+                    || _world.IsBlockAt((int)MathF.Floor(nextPos.X), blockY, (int)MathF.Floor(nextPos.Z - 0.3f));
+
+                if (footBlock)
+                {
+                    // Place camera so that eye is at top-of-block + eyeHeight
+                    // blockY is the block index under the feet; the top surface is at blockY + 1
+                    nextPos.Y = blockY + 1 + eyeHeight + 0.01f;
+                    _verticalVelocity = 0;
+                    grounded = true;
+                }
             }
 
-            // Saut
-            if (grounded && k.IsKeyPressed(Key.Space))
+            // Safety floor to prevent falling through when world not loaded
+            // During spawn grace, allow a bit more leeway above the very low safety floor
+            if (nowTick < _spawnGraceUntil)
             {
-                _verticalVelocity = 8.0f;
+                float minAllowedY = _initialSpawnY - 2.0f;
+                if (nextPos.Y < minAllowedY)
+                {
+                    nextPos.Y = minAllowedY;
+                    _verticalVelocity = 0;
+                    grounded = true;
+                    Logger.Warning($"Spawn-grace floor applied: nextPos.Y was below {minAllowedY:F2}, forcing to {minAllowedY:F2}. current camera pos XZ: {nextPos.X:F2},{nextPos.Z:F2}");
+                }
+            }
+            else
+            {
+                if (nextPos.Y < 1.0f)
+                {
+                    nextPos.Y = 1.0f;
+                    _verticalVelocity = 0;
+                    grounded = true;
+                    Logger.Warning($"Safety floor applied: nextPos.Y was below 1.0, forcing to 1.0. current camera pos XZ: {nextPos.X:F2},{nextPos.Z:F2}");
+                }
             }
 
-            // Auto-Jump
-            if (Config.Data.Physics.AutoJump && grounded && (k.IsKeyPressed(Key.W) || k.IsKeyPressed(Key.S) || k.IsKeyPressed(Key.A) || k.IsKeyPressed(Key.D)))
+            // Jump (disabled while crouching)
+            if (grounded && !isCrouching && k.IsKeyPressed(controls.JumpKey))
             {
-                // Un saut naturel : on regarde si on avance vers un bloc d'un bloc de haut
-                // On vérifie une position légèrement devant le joueur
+                _verticalVelocity = physics.JumpForce;
+            }
+
+            // Auto-jump behaviour: check one block ahead at foot level
+            if (physics.AutoJump && grounded && (k.IsKeyPressed(controls.ForwardKey) || k.IsKeyPressed(controls.BackwardKey) || k.IsKeyPressed(controls.LeftKey) || k.IsKeyPressed(controls.RightKey)))
+            {
                 Vector3D<float> moveDir = nextPos - _cameraPos;
                 moveDir.Y = 0;
                 if (moveDir.Length > 0.001f)
                 {
                     moveDir = Vector3D.Normalize(moveDir);
-                    Vector3D<float> checkPos = nextPos + moveDir * 0.5f;
+                    Vector3D<float> checkPos = nextPos + moveDir * 0.6f;
                     int cx = (int)MathF.Floor(checkPos.X);
-                    int cy = (int)MathF.Floor(checkPos.Y - 0.8f); // On vérifie à hauteur de genou (un cran au dessus du bloc sur lequel on est)
+                    int cy = (int)MathF.Floor(checkPos.Y - eyeHeight + 1.0f);
                     int cz = (int)MathF.Floor(checkPos.Z);
-                    
+
                     if (_world != null && _world.IsBlockAt(cx, cy, cz))
                     {
-                        // On vérifie qu'il n'y a pas de bloc au dessus (pour ne pas se cogner la tête)
                         if (!_world.IsBlockAt(cx, cy + 1, cz))
                         {
-                            _verticalVelocity = 5.5f; // Un saut un peu plus faible pour que ce soit fluide
+                            _verticalVelocity = MathF.Max(_verticalVelocity, physics.JumpForce * 0.9f);
                         }
                     }
                 }
             }
+
+            // Play footstep sound when moving across block boundaries while grounded
+            try
+            {
+                int currentBlockX = (int)MathF.Floor(nextPos.X);
+                int currentBlockZ = (int)MathF.Floor(nextPos.Z);
+                if (grounded && (currentBlockX != _lastFootBlockX || currentBlockZ != _lastFootBlockZ))
+                {
+                    _lastFootBlockX = currentBlockX;
+                    _lastFootBlockZ = currentBlockZ;
+                    if (_world != null)
+                    {
+                        var bt = _world.GetBlockTypeAt(currentBlockX, blockY, currentBlockZ);
+                        if (bt.HasValue)
+                        {
+                            VulkanMC.Engine.Audio.BackgroundSoundEngine.PlayStepSound(bt.Value);
+                        }
+                    }
+                }
+            }
+            catch { }
 
             if (_frameCount % 60 == 0)
             {
@@ -158,103 +269,62 @@ public partial class VulkanEngine
 
         _input = _window!.CreateInput();
         _input.Mice[0].Cursor.CursorMode = CursorMode.Normal;
-        _world = new World();
+        if (_world == null) _world = new World();
         
         // Initialiser Vulkan AVANT pour pouvoir faire UploadMesh
         Logger.Info("Initializing Vulkan...");
         InitVulkan();
 
-        // Générer les 4 chunks centraux pour un spawn sûr
-        Logger.Info("Pre-generating central 4 chunks...");
-        for (int x = -1; x <= 0; x++)
+        // Initialiser le moteur sonore d'arrière-plan (utilise un lecteur système si disponible)
+        try { VulkanMC.Engine.Audio.BackgroundSoundEngine.Init(); } catch { }
+
+        // Générer une zone centrale 3x3 pour un spawn sûr
+        Logger.Info("Pre-generating central 9 chunks...");
+        for (int x = -1; x <= 1; x++)
         {
-            for (int z = -1; z <= 0; z++)
+            for (int z = -1; z <= 1; z++)
             {
-                var (v, i) = _world.GenerateChunk(x, z, Config.Data.Rendering.ChunkSize, Config.Data.Rendering.ChunkSize, 0);
+                var (v, i) = _world.GenerateChunk(x, z, AppConfig.Data.Rendering.ChunkSize, AppConfig.Data.Rendering.ChunkSize, 0);
                 UploadMesh(new Vector2D<int>(x, z), v, i);
                 Logger.Info($"Loaded spawn chunk ({x}, {z}): {v.Length} vertices.");
             }
         }
 
-        float spawnH = _world.GetHeightAt(0, 0);
-        _cameraPos = new Vector3D<float>(0.5f, spawnH + 2.0f, 0.5f);
+        // Camera spawn was set earlier (constructor preloaded heights).
         _verticalVelocity = 0;
-        
-        Logger.Info($"Camera spawn at: {_cameraPos} (Ground height: {spawnH})");
 
-        _input.Mice[0].Cursor.CursorMode = CursorMode.Raw;
+        // Ensure camera is placed above ground after chunks generated/uploaded
+        try
+        {
+            const float eyeHeight = 1.62f;
+            int camBlockX = (int)MathF.Floor(_cameraPos.X);
+            int camBlockZ = (int)MathF.Floor(_cameraPos.Z);
+            float groundH = _world?.GetHeightAt(camBlockX, camBlockZ) ?? 0;
+            float desiredY = groundH + eyeHeight;
+            if (_cameraPos.Y < desiredY)
+            {
+                Logger.Info($"Adjusting camera Y from {_cameraPos.Y:F2} up to {desiredY:F2} to avoid spawning underground.");
+                _cameraPos = new Vector3D<float>(_cameraPos.X, desiredY, _cameraPos.Z);
+            }
+        }
+        catch { }
+
+        // Diagnostic: log final spawn and ground height
+        try
+        {
+            int cx = (int)MathF.Floor(_cameraPos.X);
+            int cz = (int)MathF.Floor(_cameraPos.Z);
+            float gh = _world?.GetHeightAt(cx, cz) ?? -999;
+            Logger.Info($"Final spawn camera: {_cameraPos} | Ground height at chunk({cx},{cz}) = {gh}");
+        }
+        catch { }
+
+        _input.Mice[0].Cursor.CursorMode = AppConfig.Data.Camera.LockCursorWhenPlaying ? CursorMode.Raw : CursorMode.Normal;
         
         sw.Stop();
         Logger.Info($"OnLoad completed in {sw.ElapsedMilliseconds}ms.");
 
         Task.Run(UpdateChunksLoop);
-    }
-
-    private unsafe void UploadMesh(Vector2D<int> pos, Vertex[] vertices, uint[] indices)
-    {
-        var sw = System.Diagnostics.Stopwatch.StartNew();
-        var mesh = new ChunkMesh { ChunkPos = pos, IndexCount = (uint)indices.Length };
-        
-        ulong vSize = (ulong)(vertices.Length * sizeof(Vertex));
-        CreateBuffer(vSize, BufferUsageFlags.VertexBufferBit, MemoryPropertyFlags.HostVisibleBit | MemoryPropertyFlags.HostCoherentBit, out mesh.VertexBuffer, out mesh.VertexMemory);
-        void* vData; _vk!.MapMemory(_device, mesh.VertexMemory, 0, vSize, 0, &vData);
-        fixed (Vertex* pV = vertices) { System.Buffer.MemoryCopy(pV, vData, (long)vSize, (long)vSize); }
-        _vk.UnmapMemory(_device, mesh.VertexMemory);
-
-        ulong iSize = (ulong)(indices.Length * sizeof(uint));
-        CreateBuffer(iSize, BufferUsageFlags.IndexBufferBit, MemoryPropertyFlags.HostVisibleBit | MemoryPropertyFlags.HostCoherentBit, out mesh.IndexBuffer, out mesh.IndexMemory);
-        void* iData; _vk.MapMemory(_device, mesh.IndexMemory, 0, iSize, 0, &iData);
-        fixed (uint* pI = indices) { System.Buffer.MemoryCopy(pI, iData, (long)iSize, (long)iSize); }
-        _vk.UnmapMemory(_device, mesh.IndexMemory);
-
-        mesh.IsReady = true;
-        _chunkMeshes[pos] = mesh;
-        sw.Stop();
-        Logger.Debug($"Uploaded chunk {pos} ({vertices.Length} verts) in {sw.ElapsedMilliseconds}ms.");
-    }
-
-    private void UpdateChunksLoop()
-    {
-        const int maxEffectiveRenderDistance = 12;
-        const int maxUploadsPerPass = 6;
-
-        while (_window != null)
-        {
-            if (_world == null) { Thread.Sleep(100); continue; }
-
-            var camPos = _cameraPos;
-            int renderDistance = Math.Clamp(Config.Data.Rendering.RenderDistanceThreshold, 2, maxEffectiveRenderDistance);
-            int chunkSize = Config.Data.Rendering.ChunkSize;
-
-            int centerChunkX = (int)MathF.Floor(camPos.X / chunkSize);
-            int centerChunkZ = (int)MathF.Floor(camPos.Z / chunkSize);
-            int uploadsQueued = 0;
-
-            for (int x = -renderDistance; x <= renderDistance; x++)
-            {
-                for (int z = -renderDistance; z <= renderDistance; z++)
-                {
-                    // Circular loading area to avoid loading expensive corner chunks.
-                    if (x * x + z * z > renderDistance * renderDistance) continue;
-
-                    int chunkX = centerChunkX + x;
-                    int chunkZ = centerChunkZ + z;
-                    var pos = new Vector2D<int>(chunkX, chunkZ);
-
-                    if (!_chunkMeshes.ContainsKey(pos) && !_world.IsChunkLoaded(chunkX, chunkZ))
-                    {
-                        var (vertices, indices) = _world.GenerateChunk(chunkX, chunkZ, chunkSize, chunkSize);
-                        if (indices.Length > 0)
-                        {
-                            if (uploadsQueued >= maxUploadsPerPass) continue;
-                            _pendingUploads.Enqueue(() => UploadMesh(pos, vertices, indices));
-                            uploadsQueued++;
-                        }
-                    }
-                }
-            }
-            Thread.Sleep(100);
-        }
     }
 
 }

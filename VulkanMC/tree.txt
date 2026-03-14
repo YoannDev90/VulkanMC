@@ -20,6 +20,10 @@
 ├── Shaders/shader.frag.spv
 ├── Shaders/shader.vert
 ├── Shaders/shader.vert.spv
+├── Shaders/shader_min.frag
+├── Shaders/shader_min.frag.spv
+├── Shaders/shader_min.vert
+├── Shaders/shader_min.vert.spv
 ├── Shaders/text.frag
 ├── Shaders/text.frag.spv
 ├── Shaders/text.vert
@@ -30,5 +34,4 @@
 ├── UI/DebugTextOverlay.cs
 ├── VulkanMC.csproj
 ├── config.toml
-├── tree.sh
 ├── tree.txt

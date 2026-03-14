@@ -7,6 +7,7 @@ using Silk.NET.Maths;
 using Silk.NET.Vulkan;
 using Silk.NET.Vulkan.Extensions.KHR;
 using StbImageSharp;
+using AppConfig = VulkanMC.Config.Config;
 using Buffer = Silk.NET.Vulkan.Buffer;
 using Semaphore = Silk.NET.Vulkan.Semaphore;
 using Matrix4x4 = System.Numerics.Matrix4x4;
@@ -40,6 +41,15 @@ public partial class VulkanEngine
         CreateSyncObjects();
         
         CreateTextResources();
+        
+        if (AppConfig.Data.Rendering.EnableEntities)
+        {
+            for (int i = 0; i < 10; i++)
+            {
+                _entities.Add(new Entities.Mob(new Vector3D<float>((float)Random.Shared.NextDouble() * 100, 60, (float)Random.Shared.NextDouble() * 100)));
+            }
+        }
+
         // Supprimé car incompatible avec le backend Vulkan pur (nécessite OpenGL)
         // _imGuiController = new Silk.NET.OpenGL.Extensions.ImGui.ImGuiController(...);
     }
@@ -135,6 +145,13 @@ public partial class VulkanEngine
         var vp = new Viewport(0, 0, _swapchainExtent.Width, _swapchainExtent.Height, 0, 1);
         var sc = new Rect2D(new Offset2D(0, 0), _swapchainExtent);
         var vpInfo = new PipelineViewportStateCreateInfo { SType = StructureType.PipelineViewportStateCreateInfo, ViewportCount = 1, PViewports = &vp, ScissorCount = 1, PScissors = &sc };
+        var dynamicStates = stackalloc DynamicState[2] { DynamicState.Viewport, DynamicState.Scissor };
+        var dynamicStateInfo = new PipelineDynamicStateCreateInfo
+        {
+            SType = StructureType.PipelineDynamicStateCreateInfo,
+            DynamicStateCount = 2,
+            PDynamicStates = dynamicStates
+        };
         var rsInfo = new PipelineRasterizationStateCreateInfo { SType = StructureType.PipelineRasterizationStateCreateInfo, CullMode = CullModeFlags.None, FrontFace = FrontFace.CounterClockwise, LineWidth = 1.0f };
         var msState = new PipelineMultisampleStateCreateInfo { SType = StructureType.PipelineMultisampleStateCreateInfo, RasterizationSamples = SampleCountFlags.Count4Bit };
         var dsInfo = new PipelineDepthStencilStateCreateInfo { SType = StructureType.PipelineDepthStencilStateCreateInfo, DepthTestEnable = false, DepthWriteEnable = false };
@@ -142,7 +159,7 @@ public partial class VulkanEngine
         var blend = new PipelineColorBlendAttachmentState { ColorWriteMask = ColorComponentFlags.RBit | ColorComponentFlags.GBit | ColorComponentFlags.BBit | ColorComponentFlags.ABit, BlendEnable = true, SrcColorBlendFactor = BlendFactor.SrcAlpha, DstColorBlendFactor = BlendFactor.OneMinusSrcAlpha, ColorBlendOp = BlendOp.Add, SrcAlphaBlendFactor = BlendFactor.One, DstAlphaBlendFactor = BlendFactor.Zero, AlphaBlendOp = BlendOp.Add };
         var cbInfo = new PipelineColorBlendStateCreateInfo { SType = StructureType.PipelineColorBlendStateCreateInfo, AttachmentCount = 1, PAttachments = &blend };
 
-        var pipeInfo = new GraphicsPipelineCreateInfo { SType = StructureType.GraphicsPipelineCreateInfo, StageCount = 2, PStages = stages, PVertexInputState = &pInfo, PInputAssemblyState = &iaInfo, PViewportState = &vpInfo, PRasterizationState = &rsInfo, PMultisampleState = &msState, PDepthStencilState = &dsInfo, PColorBlendState = &cbInfo, Layout = _textPipelineLayout, RenderPass = _renderPass };
+        var pipeInfo = new GraphicsPipelineCreateInfo { SType = StructureType.GraphicsPipelineCreateInfo, StageCount = 2, PStages = stages, PVertexInputState = &pInfo, PInputAssemblyState = &iaInfo, PViewportState = &vpInfo, PDynamicState = &dynamicStateInfo, PRasterizationState = &rsInfo, PMultisampleState = &msState, PDepthStencilState = &dsInfo, PColorBlendState = &cbInfo, Layout = _textPipelineLayout, RenderPass = _renderPass };
         _vk!.CreateGraphicsPipelines(_device, default, 1, &pipeInfo, null, out _textPipeline);
 
         _vk.DestroyShaderModule(_device, vMod, null);
@@ -178,7 +195,8 @@ public partial class VulkanEngine
         var devs = stackalloc PhysicalDevice[(int)devCount];
         _vk.EnumeratePhysicalDevices(_instance, &devCount, devs);
 
-        string? preferredGpuName = Config.Data.Hardware.PreferredGpuName;
+        var hardware = AppConfig.Data.Hardware;
+        string? preferredGpuName = hardware.PreferredGpuName;
         int bestScore = int.MinValue;
         PhysicalDevice bestDevice = default;
         uint bestQueueFamilyIndex = 0;
@@ -195,7 +213,7 @@ public partial class VulkanEngine
                 continue;
             }
 
-            int score = ScorePhysicalDevice(properties, deviceName, preferredGpuName);
+            int score = ScorePhysicalDevice(properties, deviceName, preferredGpuName, hardware);
             Logger.Info($"Vulkan GPU candidate: {deviceName} | Type: {properties.DeviceType} | Score: {score} | QueueFamily: {queueFamilyIndex}");
 
             if (score > bestScore)
@@ -271,7 +289,7 @@ public partial class VulkanEngine
         return false;
     }
 
-    private static int ScorePhysicalDevice(PhysicalDeviceProperties properties, string deviceName, string? preferredGpuName)
+    private static int ScorePhysicalDevice(PhysicalDeviceProperties properties, string deviceName, string? preferredGpuName, HardwareConfig hardware)
     {
         int score = properties.DeviceType switch
         {
@@ -289,7 +307,39 @@ public partial class VulkanEngine
             score += 100000;
         }
 
+        if (hardware.PreferDiscreteGpu)
+        {
+            score += properties.DeviceType == PhysicalDeviceType.DiscreteGpu ? 20000 : -5000;
+        }
+
+        if (!hardware.AllowIntegratedGpuFallback && properties.DeviceType == PhysicalDeviceType.IntegratedGpu)
+        {
+            score -= 50000;
+        }
+
+        if (!string.IsNullOrWhiteSpace(hardware.PreferredDeviceType) &&
+            Enum.TryParse<PhysicalDeviceType>(hardware.PreferredDeviceType, true, out var preferredType))
+        {
+            score += properties.DeviceType == preferredType ? 25000 : -500;
+        }
+
+        if (VendorMatches(deviceName, hardware.PreferredGpuVendor))
+        {
+            score += 15000;
+        }
+
         return score;
+    }
+
+    private static bool VendorMatches(string deviceName, string preferredVendor)
+    {
+        if (string.IsNullOrWhiteSpace(preferredVendor) ||
+            preferredVendor.Equals("Any", StringComparison.OrdinalIgnoreCase))
+        {
+            return true;
+        }
+
+        return deviceName.Contains(preferredVendor, StringComparison.OrdinalIgnoreCase);
     }
 
     private unsafe void CreateSwapchain()
@@ -300,6 +350,11 @@ public partial class VulkanEngine
         _khrSurface.GetPhysicalDeviceSurfaceFormats(_physicalDevice, _surface, &formatCount, null);
         var formats = stackalloc SurfaceFormatKHR[(int)formatCount];
         _khrSurface.GetPhysicalDeviceSurfaceFormats(_physicalDevice, _surface, &formatCount, formats);
+
+        uint presentModeCount = 0;
+        _khrSurface.GetPhysicalDeviceSurfacePresentModes(_physicalDevice, _surface, &presentModeCount, null);
+        var presentModes = stackalloc PresentModeKHR[(int)presentModeCount];
+        _khrSurface.GetPhysicalDeviceSurfacePresentModes(_physicalDevice, _surface, &presentModeCount, presentModes);
 
         bool formatFound = false;
         for (int i = 0; i < (int)formatCount; i++)
@@ -339,6 +394,28 @@ public partial class VulkanEngine
             imageCount = caps.MaxImageCount;
         }
 
+        PresentModeKHR selectedPresentMode = PresentModeKHR.FifoKhr;
+        if (!AppConfig.Data.Performance.UseVSync)
+        {
+            bool preferMailbox = AppConfig.Data.Hardware.PreferMailboxPresentMode;
+            for (int i = 0; i < (int)presentModeCount; i++)
+            {
+                if (preferMailbox && presentModes[i] == PresentModeKHR.MailboxKhr)
+                {
+                    selectedPresentMode = PresentModeKHR.MailboxKhr;
+                    break;
+                }
+                if (presentModes[i] == PresentModeKHR.ImmediateKhr)
+                {
+                    selectedPresentMode = PresentModeKHR.ImmediateKhr;
+                }
+                if (!preferMailbox && presentModes[i] == PresentModeKHR.MailboxKhr && selectedPresentMode != PresentModeKHR.ImmediateKhr)
+                {
+                    selectedPresentMode = PresentModeKHR.MailboxKhr;
+                }
+            }
+        }
+
         var info = new SwapchainCreateInfoKHR
         {
             SType = StructureType.SwapchainCreateInfoKhr,
@@ -351,9 +428,11 @@ public partial class VulkanEngine
             ImageUsage = ImageUsageFlags.ColorAttachmentBit,
             PreTransform = caps.CurrentTransform,
             CompositeAlpha = CompositeAlphaFlagsKHR.OpaqueBitKhr,
-            PresentMode = PresentModeKHR.FifoKhr,
+            PresentMode = selectedPresentMode,
             Clipped = true
         };
+
+        Logger.Info($"Swapchain present mode: {selectedPresentMode} (VSync={(AppConfig.Data.Performance.UseVSync ? "On" : "Off")})");
 
         var result = _khrSwapchain!.CreateSwapchain(_device, &info, null, out _swapchain);
         if (result != Result.Success)

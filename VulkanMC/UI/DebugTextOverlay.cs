@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.IO;
 using Silk.NET.Maths;
 using SkiaSharp;
+using AppConfig = VulkanMC.Config.Config;
 
 namespace VulkanMC.UI;
 
@@ -11,6 +12,8 @@ public class DebugTextOverlay
     private double _timer;
     private int _fps;
     private int _frameCount;
+    private int _visibleChunks;
+    private long _visibleVertices;
     private readonly ISystemMetricsProvider _systemMetricsProvider;
     public string CurrentDebugString { get; private set; } = "Initializing...";
 
@@ -164,12 +167,27 @@ public class DebugTextOverlay
 
     public void Update(double dt, Vector3D<float> pos, int chunkX, int chunkZ)
     {
+        if (!AppConfig.Data.Debug.ShowOverlay)
+        {
+            CurrentDebugString = string.Empty;
+            return;
+        }
+
         _timer += dt; _frameCount++;
         if (_timer >= 1.0)
         {
             SystemMetrics metrics = _systemMetricsProvider.GetMetrics();
+            var debugCfg = AppConfig.Data.Debug;
             _fps = _frameCount; _frameCount = 0; _timer -= 1.0;
-            CurrentDebugString = $"FPS: {_fps} | CPU: {FormatPercent(metrics.CpuUsagePercent)} | GPU: {FormatPercent(metrics.GpuUsagePercent)} | RAM: {FormatPercent(metrics.RamUsagePercent)} | POS: {pos.X:F2}, {pos.Y:F2}, {pos.Z:F2} | CHUNK: {chunkX}, {chunkZ}";
+
+            var parts = new List<string> { $"FPS: {_fps}" };
+            if (debugCfg.ShowCpu) parts.Add($"CPU: {FormatPercent(metrics.CpuUsagePercent)}");
+            if (debugCfg.ShowGpu) parts.Add($"GPU: {FormatPercent(metrics.GpuUsagePercent)}");
+            if (debugCfg.ShowRam) parts.Add($"RAM: {FormatPercent(metrics.RamUsagePercent)}");
+            if (debugCfg.ShowCoordinates) parts.Add($"POS: {pos.X:F2}, {pos.Y:F2}, {pos.Z:F2}");
+            if (debugCfg.ShowChunk) parts.Add($"CHUNK: {chunkX}, {chunkZ}");
+
+            CurrentDebugString = string.Join(" | ", parts);
         }
     }
 
@@ -182,4 +200,10 @@ public class DebugTextOverlay
     public uint AtlasWidth => _atlasWidth;
     public uint AtlasHeight => _atlasHeight;
     public Dictionary<char, GlyphInfo> Glyphs => _glyphs;
+
+    public void SetTerrainStats(int visibleChunks, long visibleVertices)
+    {
+        _visibleChunks = visibleChunks;
+        _visibleVertices = visibleVertices;
+    }
 }

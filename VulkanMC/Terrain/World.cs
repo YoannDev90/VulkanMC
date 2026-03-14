@@ -1,5 +1,11 @@
 using System.Collections.Generic;
 using Silk.NET.Maths;
+using System.IO;
+using System.Runtime.InteropServices;
+using System.Threading.Tasks;
+using AppConfig = VulkanMC.Config.Config;
+using VulkanMC.Graphics;
+using System;
 
 namespace VulkanMC.Terrain;
 
@@ -8,6 +14,7 @@ public class World
     private readonly SimplexNoise _noise;
     // Stockage des blocs pour les collisions (x, y, z)
     private readonly HashSet<(int, int, int)> _blocks = new();
+    private readonly Dictionary<(int, int, int), BlockType> _specialBlocks = new(); // Stores non-procedural blocks like trees
     private readonly Dictionary<(int, int), List<(int, int, int)>> _chunkBlockIndices = new();
 
     public World(int seed = 42)
@@ -59,8 +66,14 @@ public class World
         // Step size based on LOD
         int step = (int)MathF.Pow(2, lod);
         
-        // 1. Générer la carte des hauteurs avec plus de variété
-        int[,] heights = GenerateHeightmap(offsetX, offsetZ, width, depth);
+        // 1. Générer ou charger la carte des hauteurs
+        int[,] heights;
+        if (!TryLoadChunkHeights(chunkX, chunkZ, width, depth, out heights))
+        {
+            heights = GenerateHeightmap(offsetX, offsetZ, width, depth);
+            // Sauvegarde en arrière-plan pour réutilisation
+            try { SaveChunkHeightsAsync(chunkX, chunkZ, heights); } catch { }
+        }
 
         for (int x = 0; x < width; x++)
         {
@@ -80,56 +93,84 @@ public class World
         }
         if (lod == 0) _chunkBlockIndices[(chunkX, chunkZ)] = blockList;
 
+        if (AppConfig.Data.Rendering.EnableTrees && lod == 0)
+        {
+            Random rand = new Random(chunkX * 1000 + chunkZ + AppConfig.Data.Rendering.WorldSeed);
+            for (int x = 2; x < width - 2; x++)
+            {
+                for (int z = 2; z < depth - 2; z++)
+                {
+                    if (rand.NextDouble() < 0.02 && heights[x, z] < 40 && heights[x, z] > 5)
+                    {
+                        GenerateTree(offsetX + x, heights[x, z], offsetZ + z, blockList);
+                    }
+                }
+            }
+        }
+
         // 2. Générer les faces visibles
         for (int x = 0; x < width; x += step)
         {
             for (int z = 0; z < depth; z += step)
             {
-                int h = heights[x, z];
-                
-                // For distant chunks, we might only render the top layer or fewer layers
-                int startY = (lod > 0) ? h - 1 : 0; 
-                
-                for (int y = startY; y < h; y++)
+                int h;
+                // Compute height taking LOD into account to avoid seams: use max height over the LOD cell
+                if (lod == 0)
                 {
-                    Vector3D<float> blockPos = new Vector3D<float>(offsetX + x, y, offsetZ + z);
-                    Vector3D<float> blockSize = new Vector3D<float>(step, (lod > 0 && y == h - 1) ? 1 : 1, step); // Larger blocks for high LOD
-                    
-                    Vector3D<float> color = new Vector3D<float>(1.0f, 1.0f, 1.0f);
-                    BlockType blockType;
-                    
-                    if (y == h - 1)
+                    h = heights[x, z];
+                }
+                else
+                {
+                    int maxh = 0;
+                    for (int sx = 0; sx < step; sx++)
                     {
-                        if (h > 45) { // Neige pour les montagnes hautes
-                            blockType = BlockType.Snow;
-                        } else {
-                            blockType = BlockType.Grass;
+                        for (int sz = 0; sz < step; sz++)
+                        {
+                            maxh = Math.Max(maxh, (int)GetHeightAt(offsetX + x + sx, offsetZ + z + sz));
                         }
                     }
-                    else if (y > h - 4)
-                    {
-                        blockType = BlockType.Dirt;
-                    }
-                    else
-                    {
-                        blockType = BlockType.Stone;
-                    }
+                    h = maxh;
+                }
 
-                    // Culling logic: Don't render if surrounded by 6 opaque blocks
+                // For distant chunks, we might only render the top layer or fewer layers
+                int startY = (lod > 0) ? h - 1 : 0;
+                
+                for (int y = startY; y < h + 15; y++) // Extend loop for trees
+                {
+                    Vector3D<float> blockPos = new Vector3D<float>(offsetX + x, y, offsetZ + z);
+                    
+                    BlockType blockType;
+                    bool isSpecial = _specialBlocks.TryGetValue((offsetX + x, y, offsetZ + z), out var specialType);
+
+                    if (y < h)
+                    {
+                        if (y == h - 1)
+                        {
+                            if (h > 45) blockType = BlockType.Snow;
+                            else blockType = BlockType.Grass;
+                        }
+                        else if (y > h - 4) blockType = BlockType.Dirt;
+                        else blockType = BlockType.Stone;
+                    }
+                    else if (isSpecial)
+                    {
+                        blockType = specialType;
+                    }
+                    else continue;
+
+                    Vector3D<float> color = new Vector3D<float>(1.0f, 1.0f, 1.0f);
+                    
+                    // Culling logic: Don't render if surrounded by opaque blocks
                     bool fBack, fFront, fLeft, fRight, fBottom, fTop;
                     
                     if (lod == 0)
                     {
-                        // Hidden from view if it has neighbors at same or higher height
-                        fBack   = (z == 0          || y >= (x < width && z > 0 ? heights[x, z - 1] : 0));
-                        fFront  = (z == depth - 1  || y >= (x < width && z < depth - 1 ? heights[x, z + 1] : 0));
-                        fLeft   = (x == 0          || y >= (x > 0 && z < depth ? heights[x - 1, z] : 0));
-                        fRight  = (x == width - 1  || y >= (x < width - 1 && z < depth ? heights[x + 1, z] : 0));
-                        fBottom = (y == 0);
-                        fTop    = (y == h - 1);
-                        
-                        // Internal occlusion: if block is below the surface of ALL 4 neighbors, it's hidden from ground-level
-                        // But wait, we only render faces that are exposed.
+                        fBack = !IsOpaque(offsetX + x, y, offsetZ + z - 1);
+                        fFront = !IsOpaque(offsetX + x, y, offsetZ + z + 1);
+                        fLeft = !IsOpaque(offsetX + x - 1, y, offsetZ + z);
+                        fRight = !IsOpaque(offsetX + x + 1, y, offsetZ + z);
+                        fBottom = !IsOpaque(offsetX + x, y - 1, offsetZ + z);
+                        fTop = !IsOpaque(offsetX + x, y + 1, offsetZ + z);
                     }
                     else
                     {
@@ -139,7 +180,7 @@ public class World
                         fLeft = (x == 0);
                         fRight = (x == width - step);
                         fBottom = false;
-                        fTop = true;
+                        fTop = (y >= h - 1);
                     }
 
                     if (fBack || fFront || fLeft || fRight || fBottom || fTop)
@@ -160,8 +201,112 @@ public class World
             foreach (var pos in blockList)
             {
                 _blocks.Remove(pos);
+                _specialBlocks.Remove(pos);
             }
         }
+    }
+
+    private void GenerateTree(int x, int y, int z, List<(int, int, int)> blockList)
+    {
+        int height = 5;
+        // Trunk
+        for (int i = 0; i < height; i++)
+        {
+            var pos = (x, y + i, z);
+            if (!_blocks.Contains(pos))
+            {
+                _blocks.Add(pos);
+                _specialBlocks[pos] = BlockType.Wood;
+                blockList.Add(pos);
+            }
+        }
+        // Leaves
+        for (int lx = -2; lx <= 2; lx++)
+        {
+            for (int lz = -2; lz <= 2; lz++)
+            {
+                for (int ly = 0; ly <= 2; ly++)
+                {
+                    if (Math.Abs(lx) == 2 && Math.Abs(lz) == 2) continue;
+                    var pos = (x + lx, y + height + ly - 1, z + lz);
+                    if (!_blocks.Contains(pos) || (_specialBlocks.TryGetValue(pos, out var current) && current == BlockType.Leaves))
+                    {
+                        _blocks.Add(pos);
+                        _specialBlocks[pos] = BlockType.Leaves;
+                        blockList.Add(pos);
+                    }
+                }
+            }
+        }
+    }
+
+    private bool IsOpaque(int x, int y, int z)
+    {
+        if (_specialBlocks.TryGetValue((x, y, z), out var type))
+        {
+            return type != BlockType.Leaves;
+        }
+        return y < (int)GetHeightAt(x, z);
+    }
+
+    private static string ChunkCacheDir()
+    {
+        try
+        {
+            var baseDir = AppContext.BaseDirectory ?? Directory.GetCurrentDirectory();
+            var dir = Path.Combine(baseDir, "chunk_cache");
+            if (!Directory.Exists(dir)) Directory.CreateDirectory(dir);
+            return dir;
+        }
+        catch
+        {
+            var dir = Path.Combine(Directory.GetCurrentDirectory(), "chunk_cache");
+            if (!Directory.Exists(dir)) Directory.CreateDirectory(dir);
+            return dir;
+        }
+    }
+
+    private static string ChunkFilePath(int chunkX, int chunkZ) => Path.Combine(ChunkCacheDir(), $"chunk_{chunkX}_{chunkZ}.bin");
+
+    private bool TryLoadChunkHeights(int chunkX, int chunkZ, int w, int d, out int[,] heights)
+    {
+        heights = new int[w, d];
+        var path = ChunkFilePath(chunkX, chunkZ);
+        if (!File.Exists(path)) return false;
+        try
+        {
+            var bytes = File.ReadAllBytes(path);
+            int expected = w * d * sizeof(int);
+            if (bytes.Length != expected) return false;
+            int[] flat = new int[w * d];
+            System.Buffer.BlockCopy(bytes, 0, flat, 0, expected);
+            for (int x = 0; x < w; x++) for (int z = 0; z < d; z++) heights[x, z] = flat[x * d + z];
+            return true;
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
+    private void SaveChunkHeightsAsync(int chunkX, int chunkZ, int[,] heights)
+    {
+        var path = ChunkFilePath(chunkX, chunkZ);
+        // Fire-and-forget write
+        Task.Run(() =>
+        {
+            try
+            {
+                int w = heights.GetLength(0);
+                int d = heights.GetLength(1);
+                int[] flat = new int[w * d];
+                for (int x = 0; x < w; x++) for (int z = 0; z < d; z++) flat[x * d + z] = heights[x, z];
+                var bytes = new byte[flat.Length * sizeof(int)];
+                System.Buffer.BlockCopy(flat, 0, bytes, 0, bytes.Length);
+                File.WriteAllBytes(path, bytes);
+            }
+            catch { }
+        });
     }
 
     public bool IsChunkLoaded(int chunkX, int chunkZ) => _chunkBlockIndices.ContainsKey((chunkX, chunkZ));
@@ -176,6 +321,21 @@ public class World
         return _blocks.Contains((x, y, z));
     }
 
+    // Try to determine the BlockType at a given coordinate. Returns null if no block exists there.
+    public BlockType? GetBlockTypeAt(int x, int y, int z)
+    {
+        if (_specialBlocks.TryGetValue((x, y, z), out var specialType)) return specialType;
+        if (!IsBlockAt(x, y, z)) return null;
+        int h = (int)GetHeightAt(x, z);
+        if (y == h - 1)
+        {
+            if (h > 45) return BlockType.Snow;
+            return BlockType.Grass;
+        }
+        else if (y > h - 4) return BlockType.Dirt;
+        else return BlockType.Stone;
+    }
+
     private (float uMin, float vMin, float uMax, float vMax) GetUVs(BlockType type, bool isSide = false)
     {
         int index = type switch
@@ -183,98 +343,15 @@ public class World
             BlockType.Grass => isSide ? 3 : 0,
             BlockType.Stone => 1,
             BlockType.Snow => 2,
-            BlockType.Dirt => 3, // Fallback dirt to side texture for now or stone
+            BlockType.Dirt => 3,
+            BlockType.Wood => 2,
+            BlockType.Leaves => 0,
             _ => 1
         };
 
         float u = (index % 2) * 0.5f;
         float v = (index / 2) * 0.5f;
-        return (u + 0.01f, v + 0.01f, u + 0.49f, v + 0.49f); // Petits offsets pour éviter le bleeding
-    }
-
-    private void AddVisibleFaces(List<Vertex> vertices, List<uint> indices, Vector3D<float> pos, Vector3D<float> color, 
-        bool back, bool front, bool left, bool right, bool bottom, bool top, BlockType type)
-    {
-        var (uMin, vMin, uMax, vMax) = GetUVs(type, false);
-        var (suMin, svMin, suMax, svMax) = GetUVs(type, true);
-
-        // Teinte verte pour le dessus de l'herbe
-        Vector3D<float> topColor = (type == BlockType.Grass) ? new Vector3D<float>(0.4f, 0.8f, 0.3f) : 
-                                   (type == BlockType.Snow)  ? new Vector3D<float>(1.0f, 1.0f, 1.0f) :
-                                   (type == BlockType.Dirt)  ? new Vector3D<float>(1.0f, 1.0f, 1.0f) : 
-                                   (type == BlockType.Stone) ? new Vector3D<float>(1.0f, 1.0f, 1.0f) : color;
-        
-        // Teinte pour les côtés (on n'applique pas de teinte sur la texture grass_block_side par défaut, ou une légère)
-        Vector3D<float> sideColor = (type == BlockType.Grass) ? new Vector3D<float>(1.0f, 1.0f, 1.0f) : 
-                                    (type == BlockType.Snow)  ? new Vector3D<float>(1.0f, 1.0f, 1.0f) :
-                                    (type == BlockType.Dirt)  ? new Vector3D<float>(1.0f, 1.0f, 1.0f) : 
-                                    (type == BlockType.Stone) ? new Vector3D<float>(1.0f, 1.0f, 1.0f) : color;
-
-        // Face Back (z-)
-        if (back)
-        {
-            uint b = (uint)vertices.Count;
-            vertices.Add(new Vertex(pos + new Vector3D<float>(0, 0, 0), sideColor, new Vector2D<float>(suMax, svMax)));
-            vertices.Add(new Vertex(pos + new Vector3D<float>(0, 1, 0), sideColor, new Vector2D<float>(suMax, svMin)));
-            vertices.Add(new Vertex(pos + new Vector3D<float>(1, 1, 0), sideColor, new Vector2D<float>(suMin, svMin)));
-            vertices.Add(new Vertex(pos + new Vector3D<float>(1, 0, 0), sideColor, new Vector2D<float>(suMin, svMax)));
-            indices.AddRange(new uint[] { b, b + 1, b + 2, b, b + 2, b + 3 });
-        }
-
-        // Face Front (z+)
-        if (front)
-        {
-            uint b = (uint)vertices.Count;
-            vertices.Add(new Vertex(pos + new Vector3D<float>(0, 0, 1), sideColor, new Vector2D<float>(suMin, svMax)));
-            vertices.Add(new Vertex(pos + new Vector3D<float>(1, 0, 1), sideColor, new Vector2D<float>(suMax, svMax)));
-            vertices.Add(new Vertex(pos + new Vector3D<float>(1, 1, 1), sideColor, new Vector2D<float>(suMax, svMin)));
-            vertices.Add(new Vertex(pos + new Vector3D<float>(0, 1, 1), sideColor, new Vector2D<float>(suMin, svMin)));
-            indices.AddRange(new uint[] { b, b + 1, b + 2, b, b + 2, b + 3 });
-        }
-
-        // Face Left (x-)
-        if (left)
-        {
-            uint b = (uint)vertices.Count;
-            vertices.Add(new Vertex(pos + new Vector3D<float>(0, 0, 0), sideColor, new Vector2D<float>(suMin, svMax)));
-            vertices.Add(new Vertex(pos + new Vector3D<float>(0, 0, 1), sideColor, new Vector2D<float>(suMax, svMax)));
-            vertices.Add(new Vertex(pos + new Vector3D<float>(0, 1, 1), sideColor, new Vector2D<float>(suMax, svMin)));
-            vertices.Add(new Vertex(pos + new Vector3D<float>(0, 1, 0), sideColor, new Vector2D<float>(suMin, svMin)));
-            indices.AddRange(new uint[] { b, b + 1, b + 2, b, b + 2, b + 3 });
-        }
-
-        // Face Right (x+)
-        if (right)
-        {
-            uint b = (uint)vertices.Count;
-            vertices.Add(new Vertex(pos + new Vector3D<float>(1, 0, 0), sideColor, new Vector2D<float>(suMax, svMax)));
-            vertices.Add(new Vertex(pos + new Vector3D<float>(1, 1, 0), sideColor, new Vector2D<float>(suMax, svMin)));
-            vertices.Add(new Vertex(pos + new Vector3D<float>(1, 1, 1), sideColor, new Vector2D<float>(suMin, svMin)));
-            vertices.Add(new Vertex(pos + new Vector3D<float>(1, 0, 1), sideColor, new Vector2D<float>(suMin, svMax)));
-            indices.AddRange(new uint[] { b, b + 1, b + 2, b, b + 2, b + 3 });
-        }
-
-        // Face Bottom (y-)
-        if (bottom)
-        {
-            uint b = (uint)vertices.Count;
-            vertices.Add(new Vertex(pos + new Vector3D<float>(0, 0, 0), color, new Vector2D<float>(uMin, vMin)));
-            vertices.Add(new Vertex(pos + new Vector3D<float>(1, 0, 0), color, new Vector2D<float>(uMax, vMin)));
-            vertices.Add(new Vertex(pos + new Vector3D<float>(1, 0, 1), color, new Vector2D<float>(uMax, vMax)));
-            vertices.Add(new Vertex(pos + new Vector3D<float>(0, 0, 1), color, new Vector2D<float>(uMin, vMax)));
-            indices.AddRange(new uint[] { b, b + 1, b + 2, b, b + 2, b + 3 });
-        }
-
-        // Face Top (y+)
-        if (top)
-        {
-            uint b = (uint)vertices.Count;
-            vertices.Add(new Vertex(pos + new Vector3D<float>(0, 1, 0), topColor, new Vector2D<float>(uMin, vMin)));
-            vertices.Add(new Vertex(pos + new Vector3D<float>(0, 1, 1), topColor, new Vector2D<float>(uMin, vMax)));
-            vertices.Add(new Vertex(pos + new Vector3D<float>(1, 1, 1), topColor, new Vector2D<float>(uMax, vMax)));
-            vertices.Add(new Vertex(pos + new Vector3D<float>(1, 1, 0), topColor, new Vector2D<float>(uMax, vMin)));
-            indices.AddRange(new uint[] { b, b + 1, b + 2, b, b + 2, b + 3 });
-        }
+        return (u + 0.01f, v + 0.01f, u + 0.49f, v + 0.49f);
     }
 
     private void AddVisibleFacesLOD(List<Vertex> vertices, List<uint> indices, Vector3D<float> pos, Vector3D<float> color, 
@@ -284,23 +361,19 @@ public class World
         var (uMin, vMin, uMax, vMax) = GetUVs(type, false);
         var (suMin, svMin, suMax, svMax) = GetUVs(type, true);
 
-        Vector3D<float> topColor = (type == BlockType.Grass) ? new Vector3D<float>(0.4f, 0.8f, 0.3f) : 
-                                   (type == BlockType.Snow)  ? new Vector3D<float>(1.0f, 1.0f, 1.0f) :
-                                   (type == BlockType.Dirt)  ? new Vector3D<float>(1.0f, 1.0f, 1.0f) : 
-                                   (type == BlockType.Stone) ? new Vector3D<float>(1.0f, 1.0f, 1.0f) : color;
+        Vector3D<float> topColor = (type == BlockType.Grass)  ? new Vector3D<float>(0.4f, 0.8f, 0.3f) : 
+                                   (type == BlockType.Leaves) ? new Vector3D<float>(0.3f, 0.7f, 0.3f) :
+                                   (type == BlockType.Snow)   ? new Vector3D<float>(1.0f, 1.0f, 1.0f) : color;
         
-        Vector3D<float> sideColor = (type == BlockType.Grass) ? new Vector3D<float>(1.0f, 1.0f, 1.0f) : 
-                                    (type == BlockType.Snow)  ? new Vector3D<float>(1.0f, 1.0f, 1.0f) :
-                                    (type == BlockType.Dirt)  ? new Vector3D<float>(1.0f, 1.0f, 1.0f) : 
-                                    (type == BlockType.Stone) ? new Vector3D<float>(1.0f, 1.0f, 1.0f) : color;
+        Vector3D<float> sideColor = (type == BlockType.Leaves) ? new Vector3D<float>(0.3f, 0.7f, 0.3f) : color;
 
         // Face Back (z-)
         if (back)
         {
             uint b = (uint)vertices.Count;
             vertices.Add(new Vertex(pos + new Vector3D<float>(0, 0, 0), sideColor, new Vector2D<float>(suMax, svMax)));
-            vertices.Add(new Vertex(pos + new Vector3D<float>(0, 1, 0), sideColor, new Vector2D<float>(suMax, svMin)));
-            vertices.Add(new Vertex(pos + new Vector3D<float>(s, 1, 0), sideColor, new Vector2D<float>(suMin, svMin)));
+            vertices.Add(new Vertex(pos + new Vector3D<float>(0, s, 0), sideColor, new Vector2D<float>(suMax, svMin)));
+            vertices.Add(new Vertex(pos + new Vector3D<float>(s, s, 0), sideColor, new Vector2D<float>(suMin, svMin)));
             vertices.Add(new Vertex(pos + new Vector3D<float>(s, 0, 0), sideColor, new Vector2D<float>(suMin, svMax)));
             indices.AddRange(new uint[] { b, b + 1, b + 2, b, b + 2, b + 3 });
         }
@@ -311,8 +384,8 @@ public class World
             uint b = (uint)vertices.Count;
             vertices.Add(new Vertex(pos + new Vector3D<float>(0, 0, s), sideColor, new Vector2D<float>(suMin, svMax)));
             vertices.Add(new Vertex(pos + new Vector3D<float>(s, 0, s), sideColor, new Vector2D<float>(suMax, svMax)));
-            vertices.Add(new Vertex(pos + new Vector3D<float>(s, 1, s), sideColor, new Vector2D<float>(suMax, svMin)));
-            vertices.Add(new Vertex(pos + new Vector3D<float>(0, 1, s), sideColor, new Vector2D<float>(suMin, svMin)));
+            vertices.Add(new Vertex(pos + new Vector3D<float>(s, s, s), sideColor, new Vector2D<float>(suMax, svMin)));
+            vertices.Add(new Vertex(pos + new Vector3D<float>(0, s, s), sideColor, new Vector2D<float>(suMin, svMin)));
             indices.AddRange(new uint[] { b, b + 1, b + 2, b, b + 2, b + 3 });
         }
 
@@ -322,8 +395,8 @@ public class World
             uint b = (uint)vertices.Count;
             vertices.Add(new Vertex(pos + new Vector3D<float>(0, 0, 0), sideColor, new Vector2D<float>(suMin, svMax)));
             vertices.Add(new Vertex(pos + new Vector3D<float>(0, 0, s), sideColor, new Vector2D<float>(suMax, svMax)));
-            vertices.Add(new Vertex(pos + new Vector3D<float>(0, 1, s), sideColor, new Vector2D<float>(suMax, svMin)));
-            vertices.Add(new Vertex(pos + new Vector3D<float>(0, 1, 0), sideColor, new Vector2D<float>(suMin, svMin)));
+            vertices.Add(new Vertex(pos + new Vector3D<float>(0, s, s), sideColor, new Vector2D<float>(suMax, svMin)));
+            vertices.Add(new Vertex(pos + new Vector3D<float>(0, s, 0), sideColor, new Vector2D<float>(suMin, svMin)));
             indices.AddRange(new uint[] { b, b + 1, b + 2, b, b + 2, b + 3 });
         }
 
@@ -332,8 +405,8 @@ public class World
         {
             uint b = (uint)vertices.Count;
             vertices.Add(new Vertex(pos + new Vector3D<float>(s, 0, 0), sideColor, new Vector2D<float>(suMax, svMax)));
-            vertices.Add(new Vertex(pos + new Vector3D<float>(s, 1, 0), sideColor, new Vector2D<float>(suMax, svMin)));
-            vertices.Add(new Vertex(pos + new Vector3D<float>(s, 1, s), sideColor, new Vector2D<float>(suMin, svMin)));
+            vertices.Add(new Vertex(pos + new Vector3D<float>(s, s, 0), sideColor, new Vector2D<float>(suMax, svMin)));
+            vertices.Add(new Vertex(pos + new Vector3D<float>(s, s, s), sideColor, new Vector2D<float>(suMin, svMin)));
             vertices.Add(new Vertex(pos + new Vector3D<float>(s, 0, s), sideColor, new Vector2D<float>(suMin, svMax)));
             indices.AddRange(new uint[] { b, b + 1, b + 2, b, b + 2, b + 3 });
         }
@@ -367,5 +440,7 @@ public enum BlockType
     Grass,
     Dirt,
     Stone,
-    Snow
+    Snow,
+    Wood,
+    Leaves
 }

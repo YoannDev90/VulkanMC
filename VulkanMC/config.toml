@@ -2,28 +2,114 @@
 RenderDistanceThreshold = 56
 ChunkSize = 8
 WorldSeed = 42
+FieldOfViewRadians = 1.0
+NearPlane = 0.1
+FarPlane = 1000.0
+UseShaders = false
+
+[Performance]
+UseVSync = true
+MaxFps = 0 # 0 = uncapped; useful when UseVSync=false
+UpdatesPerSecond = 60
+ChunkUpdateIntervalMs = 100
+ChunkUploadBudgetPerPass = 6
+MaxEffectiveRenderDistance = 12
+
+[Safety]
+EnableResourceGuard = true
+CpuUsageSoftLimitPercent = 90.0
+RamUsageSoftLimitPercent = 92.0
+GpuUsageSoftLimitPercent = 97.0
+MaxLoadedChunks = 900
+UnloadBatchSize = 24
+PressureCooldownMs = 300
+MaxPendingUploadActions = 256
+
+[Camera]
+MouseSensitivity = 0.1
+MinPitch = -89.0
+MaxPitch = 89.0
+LockCursorWhenPlaying = true
+
+[Debug]
+ShowOverlay = true
+ShowCpu = true
+ShowGpu = true
+ShowRam = true
+ShowCoordinates = true
+ShowChunk = true
+ShowFpsInWindowTitle = false
+
 [Physics]
 BaseMovementSpeed = 150.0
 SprintMultiplier = 30.0
 JumpForce = 0.0
 Gravity = 25.0
 Drag = 10.0
+
 [Logging]
 Level = "Info"
+EnableConsoleColors = true
+IncludeTimestamp = true
+IncludeThreadId = false
+UseUtcTimestamp = false
+TimestampFormat = "HH:mm:ss.fff"
+EnableFileLogging = false
+FilePath = "logs/vulkanmc.log"
+AppendToFile = true
+FlushIntervalMs = 250
+MaxFileSizeMB = 25
+MaxRetainedFiles = 5
+AsyncQueueCapacity = 4096 # future use
+DropMessagesWhenQueueFull = true # future use
+DuplicateSuppressionMs = 0
+EnableMetricsSummaryLogs = false # future use
+MetricsSummaryIntervalMs = 5000 # future use
+
 [Window]
 Fullscreen = false # Overrides Maximized if set to true
 Maximized = true # Override Width and Height settings if set to true
 Width = 1280 
 Height = 720
 Title = "VulkanMC Engine"
+
 [Controls]
-Forward = 87
-Backward = 83
-Left = 65
-Right = 68
-Jump = 32
-Sprint = 340
-Escape = 256
-QuickExit = 261
+Forward = "W"
+Backward = "S"
+Left = "A"
+Right = "D"
+Jump = "Space"
+Sprint = "LeftCtrl"
+Crouch = "LeftShift"
+Inventory = "E"
+Drop = "Q"
+Chat = "T"
+PlayerList = "Tab"
+ToggleDebug = "F3"
+Escape = "Escape"
+QuickExit = "Delete"
+
 [Hardware]
 PreferredGpuName = "AMD Radeon RX 6500 (RADV NAVI24)"
+PreferredDeviceType = "DiscreteGpu"
+PreferDiscreteGpu = true
+AllowIntegratedGpuFallback = true
+PreferMailboxPresentMode = true
+EnableTextureStreaming = false # future use
+TextureBudgetMB = 1024 # future use
+MeshBudgetMB = 1024 # future use
+MaxAnisotropy = 16.0 # future use
+EnableFrustumCulling = true # future use
+EnableOcclusionCulling = false # future use
+DynamicResolutionEnabled = false
+DynamicResolutionMinScale = 0.5
+DynamicResolutionMaxScale = 1.0
+TargetGpuUsagePercent = 92.0
+ThermalThrottleCpuCelsius = 90.0 # future use
+ThermalThrottleGpuCelsius = 88.0 # future use
+ProcessPriorityClass = "Normal" # future use
+CpuAffinityMask = "Auto" # future use
+ForceCpuMetricsPolling = false # future use
+ForceGpuMetricsPolling = false # future use
+ForceVulkanValidationLayers = false # future use
+

@@ -29,11 +29,30 @@ public partial class VulkanEngine
     private unsafe void CreateGraphicsPipeline()
     {
         string baseDir = "/home/yoann/Documents/GitHub/VulkanMC/VulkanMC";
-        string vPath = Path.Combine(baseDir, "Shaders", "shader.vert.spv");
-        string fPath = Path.Combine(baseDir, "Shaders", "shader.frag.spv");
+        bool useShaders = VulkanMC.Config.Config.Data.Rendering.UseShaders;
+        // Log the minimal-shader fallback once when pipeline is created.
+        if (!useShaders && !_hasLoggedShaderFallback)
+        {
+            Logger.Info("Shaders disabled via config; using minimal shader pipeline.");
+            _hasLoggedShaderFallback = true;
+        }
+        string vPath = Path.Combine(baseDir, "Shaders", useShaders ? "shader.vert.spv" : "shader_min.vert.spv");
+        string fPath = Path.Combine(baseDir, "Shaders", useShaders ? "shader.frag.spv" : "shader_min.frag.spv");
 
         if (!File.Exists(vPath)) vPath = "Shaders/shader.vert.spv";
         if (!File.Exists(fPath)) fPath = "Shaders/shader.frag.spv";
+
+        if (!File.Exists(vPath) || !File.Exists(fPath))
+        {
+            // Fallback: use original shaders if minimal SPV not present
+            string altV = Path.Combine(baseDir, "Shaders", "shader.vert.spv");
+            string altF = Path.Combine(baseDir, "Shaders", "shader.frag.spv");
+            if (File.Exists(altV) && File.Exists(altF))
+            {
+                vPath = altV; fPath = altF;
+                Logger.Warning("Minimal shader SPV not found; falling back to full shaders.");
+            }
+        }
 
         byte[] vCode = File.ReadAllBytes(vPath);
         byte[] fCode = File.ReadAllBytes(fPath);
@@ -53,6 +72,13 @@ public partial class VulkanEngine
             var vp = new Viewport(0, 0, _swapchainExtent.Width, _swapchainExtent.Height, 0, 1);
             var sc = new Rect2D(new Offset2D(0, 0), _swapchainExtent);
             var vpInfo = new PipelineViewportStateCreateInfo { SType = StructureType.PipelineViewportStateCreateInfo, ViewportCount = 1, PViewports = &vp, ScissorCount = 1, PScissors = &sc };
+            var dynamicStates = stackalloc DynamicState[2] { DynamicState.Viewport, DynamicState.Scissor };
+            var dynamicStateInfo = new PipelineDynamicStateCreateInfo
+            {
+                SType = StructureType.PipelineDynamicStateCreateInfo,
+                DynamicStateCount = 2,
+                PDynamicStates = dynamicStates
+            };
             var rsInfo = new PipelineRasterizationStateCreateInfo { SType = StructureType.PipelineRasterizationStateCreateInfo, CullMode = CullModeFlags.BackBit, FrontFace = FrontFace.CounterClockwise, LineWidth = 1.0f };
             var msInfo = new PipelineColorBlendAttachmentState { ColorWriteMask = ColorComponentFlags.RBit | ColorComponentFlags.GBit | ColorComponentFlags.BBit | ColorComponentFlags.ABit };
             var msState = new PipelineMultisampleStateCreateInfo { SType = StructureType.PipelineMultisampleStateCreateInfo, RasterizationSamples = SampleCountFlags.Count4Bit };
@@ -64,7 +90,7 @@ public partial class VulkanEngine
                 var plInfo = new PipelineLayoutCreateInfo { SType = StructureType.PipelineLayoutCreateInfo, SetLayoutCount = 1, PSetLayouts = pDSL, PushConstantRangeCount = 1, PPushConstantRanges = &push };
                 _vk!.CreatePipelineLayout(_device, &plInfo, null, out _pipelineLayout);
             }
-            var pipeInfo = new GraphicsPipelineCreateInfo { SType = StructureType.GraphicsPipelineCreateInfo, StageCount = 2, PStages = stages, PVertexInputState = &pInfo, PInputAssemblyState = &iaInfo, PViewportState = &vpInfo, PRasterizationState = &rsInfo, PMultisampleState = &msState, PDepthStencilState = &dsInfo, PColorBlendState = &cbInfo, Layout = _pipelineLayout, RenderPass = _renderPass };
+            var pipeInfo = new GraphicsPipelineCreateInfo { SType = StructureType.GraphicsPipelineCreateInfo, StageCount = 2, PStages = stages, PVertexInputState = &pInfo, PInputAssemblyState = &iaInfo, PViewportState = &vpInfo, PDynamicState = &dynamicStateInfo, PRasterizationState = &rsInfo, PMultisampleState = &msState, PDepthStencilState = &dsInfo, PColorBlendState = &cbInfo, Layout = _pipelineLayout, RenderPass = _renderPass };
             _vk.CreateGraphicsPipelines(_device, default, 1, &pipeInfo, null, out _graphicsPipeline);
         }
         _vk.DestroyShaderModule(_device, vMod, null);
