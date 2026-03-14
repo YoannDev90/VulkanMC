@@ -2,33 +2,65 @@ using System.Runtime.InteropServices;
 using Silk.NET.Input;
 using Silk.NET.Maths;
 using Silk.NET.Vulkan;
+using System.Diagnostics;
+using VulkanMC.Core;
 
 namespace VulkanMC;
 
 public partial class VulkanEngine
 {
+    private double _fpsTimer = 0;
+    private int _fpsCounter = 0;
+    private int _lastFps = 0;
+    private bool _debugOverlay = true;
+
     private void OnUpdate(double dt)
     {
-        if (_input!.Keyboards[0].IsKeyPressed(Key.Escape))
+        _fpsTimer += dt;
+        _fpsCounter++;
+
+        if (_fpsTimer >= 1.0)
         {
-            _isPaused = !_isPaused;
-            _input.Mice[0].Cursor.CursorMode = _isPaused ? CursorMode.Normal : CursorMode.Raw;
-            Thread.Sleep(200);
+            _lastFps = _fpsCounter;
+            _fpsCounter = 0;
+            _fpsTimer = 0;
+            
+            if (_window != null)
+            {
+                _window.Title = $"VulkanMC - FPS: {_lastFps}";
+            }
+        }
+
+        if (_input!.Keyboards.Count > 0)
+        {
+            if (_input.Keyboards[0].IsKeyPressed(Key.Escape))
+            {
+                _isPaused = !_isPaused;
+                _input.Mice[0].Cursor.CursorMode = _isPaused ? CursorMode.Normal : CursorMode.Raw;
+                Thread.Sleep(200);
+            }
+            if (_input.Keyboards[0].IsKeyPressed(Key.Delete))
+            {
+                Environment.Exit(0);
+            }
         }
         if (_isPaused) return;
 
         UpdatePositionWithCollisions((float)dt);
 
-        _lastMouseX ??= _input.Mice[0].Position.X;
-        _lastMouseY ??= _input.Mice[0].Position.Y;
-        float dx = (float)(_input.Mice[0].Position.X - _lastMouseX.Value);
-        float dy = (float)(_input.Mice[0].Position.Y - _lastMouseY.Value);
-        _lastMouseX = _input.Mice[0].Position.X;
-        _lastMouseY = _input.Mice[0].Position.Y;
-        
-        _yaw += dx * 0.1f;
-        _pitch -= dy * 0.1f;
-        _pitch = Math.Clamp(_pitch, -89f, 89f);
+        if (_input.Mice.Count > 0)
+        {
+            _lastMouseX ??= _input.Mice[0].Position.X;
+            _lastMouseY ??= _input.Mice[0].Position.Y;
+            float dx = (float)(_input.Mice[0].Position.X - _lastMouseX.Value);
+            float dy = (float)(_input.Mice[0].Position.Y - _lastMouseY.Value);
+            _lastMouseX = _input.Mice[0].Position.X;
+            _lastMouseY = _input.Mice[0].Position.Y;
+            
+            _yaw += dx * 0.1f;
+            _pitch -= dy * 0.1f;
+            _pitch = Math.Clamp(_pitch, -89f, 89f);
+        }
 
         Vector3D<float> f;
         f.X = MathF.Cos(MathF.PI / 180 * _yaw) * MathF.Cos(MathF.PI / 180 * _pitch);
@@ -39,7 +71,8 @@ public partial class VulkanEngine
 
     private void UpdatePositionWithCollisions(float dt)
     {
-        var k = _input!.Keyboards[0];
+        if (_input == null || _input.Keyboards.Count == 0) return;
+        var k = _input.Keyboards[0];
         float s = 10f * dt;
         var nextPos = _cameraPos;
         var forward = new Vector3D<float>(_cameraFront.X, 0, _cameraFront.Z);
@@ -121,20 +154,20 @@ public partial class VulkanEngine
 
             if (_frameCount % 60 == 0)
             {
-                Console.WriteLine($"[Physics] Pos: {nextPos.X:F1}, {nextPos.Y:F1}, {nextPos.Z:F1} | Grounded: {grounded} | Vel: {_verticalVelocity:F2}");
+                Logger.Debug($"[Physics] Pos: {nextPos.X:F1}, {nextPos.Y:F1}, {nextPos.Z:F1} | Grounded: {grounded} | Vel: {_verticalVelocity:F2}");
             }
         }
         _cameraPos = nextPos;
         
         if (_frameCount % 60 == 0)
         {
-            Console.WriteLine($"[{DateTime.Now:HH:mm:ss.fff}] [DEBUG] Pos: {_cameraPos.X:F2}, {_cameraPos.Y:F2}, {_cameraPos.Z:F2} | Vel: {_verticalVelocity:F2}");
+            Logger.Debug($"Pos: {_cameraPos.X:F2}, {_cameraPos.Y:F2}, {_cameraPos.Z:F2} | Vel: {_verticalVelocity:F2}");
         }
     }
 
     private unsafe void OnLoad()
     {
-        Console.WriteLine($"[{DateTime.Now:HH:mm:ss.fff}] [INFO] Starting OnLoad...");
+        Logger.Info("Starting OnLoad...");
         var sw = System.Diagnostics.Stopwatch.StartNew();
 
         _input = _window!.CreateInput();
@@ -142,18 +175,18 @@ public partial class VulkanEngine
         _world = new World();
         
         // Initialiser Vulkan AVANT pour pouvoir faire UploadMesh
-        Console.WriteLine($"[{DateTime.Now:HH:mm:ss.fff}] [INFO] Initializing Vulkan...");
+        Logger.Info("Initializing Vulkan...");
         InitVulkan();
 
         // Générer les 4 chunks centraux pour un spawn sûr
-        Console.WriteLine($"[{DateTime.Now:HH:mm:ss.fff}] [INFO] Pre-generating central 4 chunks...");
+        Logger.Info("Pre-generating central 4 chunks...");
         for (int x = -1; x <= 0; x++)
         {
             for (int z = -1; z <= 0; z++)
             {
                 var (v, i) = _world.GenerateChunk(x, z, Config.Data.Rendering.ChunkSize, Config.Data.Rendering.ChunkSize, 0);
                 UploadMesh(new Vector2D<int>(x, z), v, i);
-                Console.WriteLine($"[{DateTime.Now:HH:mm:ss.fff}] [INFO] Loaded spawn chunk ({x}, {z}): {v.Length} vertices.");
+                Logger.Info($"Loaded spawn chunk ({x}, {z}): {v.Length} vertices.");
             }
         }
 
@@ -161,12 +194,12 @@ public partial class VulkanEngine
         _cameraPos = new Vector3D<float>(0.5f, spawnH + 2.0f, 0.5f);
         _verticalVelocity = 0;
         
-        Console.WriteLine($"[{DateTime.Now:HH:mm:ss.fff}] [INFO] Camera spawn at: {_cameraPos} (Ground height: {spawnH})");
+        Logger.Info($"Camera spawn at: {_cameraPos} (Ground height: {spawnH})");
 
         _input.Mice[0].Cursor.CursorMode = CursorMode.Raw;
         
         sw.Stop();
-        Console.WriteLine($"[{DateTime.Now:HH:mm:ss.fff}] [INFO] OnLoad completed in {sw.ElapsedMilliseconds}ms.");
+        Logger.Info($"OnLoad completed in {sw.ElapsedMilliseconds}ms.");
 
         Task.Run(UpdateChunksLoop);
     }
@@ -191,36 +224,45 @@ public partial class VulkanEngine
         mesh.IsReady = true;
         _chunkMeshes[pos] = mesh;
         sw.Stop();
-        Console.WriteLine($"[{DateTime.Now:HH:mm:ss.fff}] [DEBUG] Uploaded chunk {pos} ({vertices.Length} verts) in {sw.ElapsedMilliseconds}ms.");
+        Logger.Debug($"Uploaded chunk {pos} ({vertices.Length} verts) in {sw.ElapsedMilliseconds}ms.");
     }
 
     private void UpdateChunksLoop()
     {
+        const int maxEffectiveRenderDistance = 12;
+        const int maxUploadsPerPass = 6;
+
         while (_window != null)
         {
             if (_world == null) { Thread.Sleep(100); continue; }
 
             var camPos = _cameraPos;
-            int renderDistance = Config.Data.Rendering.RenderDistanceThreshold;
+            int renderDistance = Math.Clamp(Config.Data.Rendering.RenderDistanceThreshold, 2, maxEffectiveRenderDistance);
             int chunkSize = Config.Data.Rendering.ChunkSize;
 
             int centerChunkX = (int)MathF.Floor(camPos.X / chunkSize);
             int centerChunkZ = (int)MathF.Floor(camPos.Z / chunkSize);
+            int uploadsQueued = 0;
 
             for (int x = -renderDistance; x <= renderDistance; x++)
             {
                 for (int z = -renderDistance; z <= renderDistance; z++)
                 {
+                    // Circular loading area to avoid loading expensive corner chunks.
+                    if (x * x + z * z > renderDistance * renderDistance) continue;
+
                     int chunkX = centerChunkX + x;
                     int chunkZ = centerChunkZ + z;
                     var pos = new Vector2D<int>(chunkX, chunkZ);
 
-                    if (!_chunkMeshes.ContainsKey(pos) && !_world.IsChunkLoaded(chunkX, chunkZ))
+                    if (!_chunkMeshes.ContainsKey(pos))
                     {
                         var (vertices, indices) = _world.GenerateChunk(chunkX, chunkZ, chunkSize, chunkSize);
                         if (indices.Length > 0)
                         {
+                            if (uploadsQueued >= maxUploadsPerPass) continue;
                             _pendingUploads.Enqueue(() => UploadMesh(pos, vertices, indices));
+                            uploadsQueued++;
                         }
                     }
                 }
@@ -228,5 +270,4 @@ public partial class VulkanEngine
             Thread.Sleep(100);
         }
     }
-
 }
