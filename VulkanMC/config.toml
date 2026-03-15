@@ -32,6 +32,8 @@ AutoJump = true
 Width = 1280
 Height = 720
 Title = "VulkanMC Engine"
+Fullscreen = false
+Maximized = true
 
 [Controls]
 Forward = 87

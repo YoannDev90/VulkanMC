@@ -12,8 +12,12 @@ namespace VulkanMC;
 public partial class VulkanEngine : IDisposable
 {
     private class ChunkMesh
+
     {
 #pragma warning disable CS0649
+        public Vector3D<float> BoundsMin;
+        public Vector3D<float> BoundsMax;
+        public Vector3D<float> Position;
         public Buffer VertexBuffer;
         public DeviceMemory VertexMemory;
         public Buffer IndexBuffer;
@@ -98,7 +102,10 @@ public partial class VulkanEngine : IDisposable
     private UI.TextOverlay? _debugOverlay;
 
     public struct PushConstant { public System.Numerics.Matrix4x4 MVP; }
-    public struct UiPushConstants { public Vector2D<float> Scale; public Vector2D<float> Translate; }
+    public struct UiPushConstants
+    {
+        public Vector2D<float> Scale; public Vector2D<float> Translate;
+    }
 
     public VulkanEngine()
     {
@@ -108,7 +115,8 @@ public partial class VulkanEngine : IDisposable
             Size = new Vector2D<int>(Config.Data.Window.Width, Config.Data.Window.Height),
             Title = Config.Data.Window.Title,
             FramesPerSecond = 0,
-            UpdatesPerSecond = 60
+            UpdatesPerSecond = 60,
+            WindowState = Config.Data.Window.Fullscreen ? WindowState.Fullscreen : (Config.Data.Window.Maximized ? WindowState.Maximized : WindowState.Normal)
         };
         _window = Window.Create(opt);
         _window.Load += OnLoad;

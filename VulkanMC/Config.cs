@@ -37,6 +37,8 @@ public class WindowConfig
     public int Width { get; set; } = 1280;
     public int Height { get; set; } = 720;
     public string Title { get; set; } = "VulkanMC Engine";
+    public bool Fullscreen { get; set; } = true;
+    public bool Maximized { get; set; } = false;
 }
 
 public class ControlsConfig

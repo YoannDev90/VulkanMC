@@ -32,13 +32,26 @@ public static class Logger
     public static void Warning(string message) => Log(LogLevel.Warning, message, YELLOW);
     public static void Error(string message) => Log(LogLevel.Error, message, RED);
 
+    private static string? _lastLogMsg;
+
     private static void Log(LogLevel level, string message, string color)
     {
         if (level < MinimumLevel) return;
 
         string timestamp = DateTime.Now.ToString("HH:mm:ss");
-        string levelStr = level.ToString().ToUpper().PadRight(7);
-        
-        Console.WriteLine($"{timestamp} {BOLD}{color}[{levelStr}]{RESET} {message}");
+
+        var stack = new System.Diagnostics.StackTrace(true);
+        var frame = stack.GetFrame(2);
+        string file = frame?.GetFileName() ?? "?";
+        int line = frame?.GetFileLineNumber() ?? 0;
+        string lineStr = line.ToString("D3");
+        string fileShort = System.IO.Path.GetFileName(file).PadRight(15);
+
+        if (_lastLogMsg == message)
+            return;
+        _lastLogMsg = message;
+
+        string logLine = $"{timestamp} [{fileShort}] ({lineStr}) {message}";
+        Console.WriteLine($"{color}{logLine}{RESET}");
     }
 }

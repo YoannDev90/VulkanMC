@@ -5,6 +5,7 @@ using Silk.NET.Vulkan.Extensions.KHR;
 using Silk.NET.Maths;
 using Matrix4x4 = System.Numerics.Matrix4x4;
 using Semaphore = Silk.NET.Vulkan.Semaphore;
+using VulkanMC.Core;
 
 namespace VulkanMC;
 
@@ -69,9 +70,17 @@ public partial class VulkanEngine
         var viewProj = view * proj;
 
         uint drawCount = 0;
+        uint ignoredCount = 0;
+        var frustum = new Frustum(viewProj);
         foreach (var mesh in _chunkMeshes.Values)
         {
-            if (!mesh.IsReady) continue;
+            if (!mesh.IsReady) { ignoredCount++; Logger.Debug($"Ignored (not ready): chunk {mesh.ChunkPos}"); continue; }
+            if (!IsChunkVisible(mesh, frustum))
+            {
+                ignoredCount++;
+                Logger.Debug($"Ignored (culling): chunk {mesh.ChunkPos} boundsMin={mesh.BoundsMin} boundsMax={mesh.BoundsMax} cam={_cameraPos}");
+                continue;
+            }
 
             var push = new PushConstant { MVP = viewProj };
             _vk.CmdPushConstants(cb, _pipelineLayout, ShaderStageFlags.VertexBit, 0, (uint)sizeof(PushConstant), &push);
@@ -81,6 +90,7 @@ public partial class VulkanEngine
             _vk.CmdDrawIndexed(cb, mesh.IndexCount, 1, 0, 0, 0);
             drawCount++;
         }
+        Logger.Info($"Chunks drawn: {drawCount}, ignored: {ignoredCount}, total: {_chunkMeshes.Count}");
 
         if (_debugOverlay != null)
         {
@@ -91,6 +101,14 @@ public partial class VulkanEngine
         _vk.CmdEndRenderPass(cb);
         _vk.EndCommandBuffer(cb);
         _frameCount++;
+    }
+
+    private bool IsChunkVisible(ChunkMesh mesh, Frustum frustum)
+    {
+        // Fallback: si bounds non initialisés, toujours afficher
+        if (mesh.BoundsMin == mesh.BoundsMax)
+            return true;
+        return frustum.IsBoxInFrustum(mesh.BoundsMin, mesh.BoundsMax);
     }
 
     private unsafe void DrawUi(CommandBuffer cb)
