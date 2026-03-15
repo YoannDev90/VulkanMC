@@ -9,6 +9,25 @@ public partial class VulkanEngine
     private void UpdatePositionWithCollisions(float dt)
     {
         if (_input == null || _input.Keyboards.Count == 0) return;
+        if (_spawnProtected)
+        {
+            Logger.Debug($"CameraPos: {_cameraPos} | Protection: {_spawnProtected}");
+            if (_world != null && _world.IsChunkLoaded(0, 0))
+            {
+                int blockX = (int)MathF.Floor(_cameraPos.X);
+                int blockY = (int)MathF.Floor(_cameraPos.Y - 1.8f);
+                int blockZ = (int)MathF.Floor(_cameraPos.Z);
+                if (_world.IsBlockAt(blockX, blockY, blockZ))
+                {
+                    float targetY = blockY + 2.8f;
+                    Logger.Debug($"Bloc détecté sous le joueur, placement à {targetY}");
+                    _cameraPos.Y = targetY;
+                    _verticalVelocity = 0;
+                    _spawnProtected = false;
+                }
+            }
+            return;
+        }
         var k = _input.Keyboards[0];
         float s = 10f * dt;
         var nextPos = _cameraPos;
@@ -84,7 +103,7 @@ public partial class VulkanEngine
 
             if (_frameCount % 60 == 0)
             {
-                Logger.Debug($"[Physics] Pos: {nextPos.X:F1}, {nextPos.Y:F1}, {nextPos.Z:F1} | Grounded: {grounded} | Vel: {_verticalVelocity:F2}");
+                Logger.Debug($"Pos: {nextPos.X:F1}, {nextPos.Y:F1}, {nextPos.Z:F1} | Grounded: {grounded} | Vel: {_verticalVelocity:F2}");
             }
         }
         _cameraPos = nextPos;

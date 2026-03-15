@@ -54,17 +54,15 @@ public partial class VulkanEngine : IDisposable
     private CommandBuffer[] _commandBuffers = [];
     private Semaphore _imageAvailableSemaphore;
     private Semaphore _renderFinishedSemaphore;
+    private bool _spawnProtected = true;
     private Fence _inFlightFence;
 
     private Vector3D<float> _cameraPos = new(0, 50, 0);
     private Vector3D<float> _cameraFront = new(0, 0, -1);
     private Vector3D<float> _cameraUp = Vector3D<float>.UnitY;
-
-    // FPS tracking fields for OnUpdate
     private double _fpsTimer = 0;
     private int _fpsCounter = 0;
     private int _lastFps = 0;
-
     private Image _textureImage;
     private DeviceMemory _textureImageMemory;
     private ImageView _textureImageView;
@@ -72,23 +70,19 @@ public partial class VulkanEngine : IDisposable
     private DescriptorPool _descriptorPool;
     private DescriptorSet _descriptorSet;
     private DescriptorSetLayout _descriptorSetLayout;
-
     private Image _uiTextureImage;
     private DeviceMemory _uiTextureImageMemory;
     private ImageView _uiTextureImageView;
     private DescriptorSet _uiDescriptorSet;
-
     private Buffer _uiVertexBuffer;
     private DeviceMemory _uiVertexMemory;
     private uint _uiVertexCount;
-
     private Image _colorImage;
     private DeviceMemory _colorImageMemory;
     private ImageView _colorImageView;
     private Image _depthImage;
     private DeviceMemory _depthImageMemory;
     private ImageView _depthImageView;
-
     private World? _world;
     private IInputContext? _input;
     private double? _lastMouseX, _lastMouseY;
@@ -96,7 +90,6 @@ public partial class VulkanEngine : IDisposable
     private float _verticalVelocity = 0;
     private bool _isPaused = false;
     private int _frameCount = 0;
-
     private ConcurrentDictionary<Vector2D<int>, ChunkMesh> _chunkMeshes = new();
     private ConcurrentQueue<Action> _pendingUploads = new();
     private UI.TextOverlay? _debugOverlay;
@@ -133,26 +126,32 @@ public partial class VulkanEngine : IDisposable
     {
         if (_device.Handle != 0)
         {
-            _vk?.DeviceWaitIdle(_device);
-            foreach (var mesh in _chunkMeshes.Values)
+            var deviceCopy = _device;
+            System.Threading.Tasks.Task.Run(() =>
             {
-                _vk?.DestroyBuffer(_device, mesh.VertexBuffer, null);
-                _vk?.FreeMemory(_device, mesh.VertexMemory, null);
-            }
+                if (deviceCopy.Handle != 0)
+                {
+                    foreach (var mesh in _chunkMeshes.Values)
+                    {
+                        _vk?.DestroyBuffer(deviceCopy, mesh.VertexBuffer, null);
+                        _vk?.FreeMemory(deviceCopy, mesh.VertexMemory, null);
+                    }
 
-            if (_uiVertexBuffer.Handle != 0)
-            {
-                _vk?.DestroyBuffer(_device, _uiVertexBuffer, null);
-                _vk?.FreeMemory(_device, _uiVertexMemory, null);
-            }
+                    if (_uiVertexBuffer.Handle != 0)
+                    {
+                        _vk?.DestroyBuffer(deviceCopy, _uiVertexBuffer, null);
+                        _vk?.FreeMemory(deviceCopy, _uiVertexMemory, null);
+                    }
 
-            if (_uiPipeline.Handle != 0) _vk?.DestroyPipeline(_device, _uiPipeline, null);
-            if (_uiPipelineLayout.Handle != 0) _vk?.DestroyPipelineLayout(_device, _uiPipelineLayout, null);
-            if (_uiTextureImageView.Handle != 0) _vk?.DestroyImageView(_device, _uiTextureImageView, null);
-            if (_uiTextureImage.Handle != 0) _vk?.DestroyImage(_device, _uiTextureImage, null);
-            if (_uiTextureImageMemory.Handle != 0) _vk?.FreeMemory(_device, _uiTextureImageMemory, null);
+                    if (_uiPipeline.Handle != 0) _vk?.DestroyPipeline(deviceCopy, _uiPipeline, null);
+                    if (_uiPipelineLayout.Handle != 0) _vk?.DestroyPipelineLayout(deviceCopy, _uiPipelineLayout, null);
+                    if (_uiTextureImageView.Handle != 0) _vk?.DestroyImageView(deviceCopy, _uiTextureImageView, null);
+                    if (_uiTextureImage.Handle != 0) _vk?.DestroyImage(deviceCopy, _uiTextureImage, null);
+                    if (_uiTextureImageMemory.Handle != 0) _vk?.FreeMemory(deviceCopy, _uiTextureImageMemory, null);
 
-            _vk?.DestroyDevice(_device, null);
+                    _vk?.DestroyDevice(deviceCopy, null);
+                }
+            });
             _device = default;
         }
     }

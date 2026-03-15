@@ -1,5 +1,3 @@
-// ...existing code from Logger.cs...using System;
-
 namespace VulkanMC.Core;
 
 public enum LogLevel
@@ -12,7 +10,7 @@ public enum LogLevel
 
 public static class Logger
 {
-    public static LogLevel MinimumLevel { get; set; } = LogLevel.Info;
+    public static LogLevel MinimumLevel { get; set; } = LogLevel.Debug;
 
     // ANSI Colors constants
     public const string RESET = "\u001b[0m";
@@ -28,7 +26,6 @@ public static class Logger
 
     public static void Debug(string message) => Log(LogLevel.Debug, message, BLUE);
     public static void Info(string message) => Log(LogLevel.Info, message, GREEN);
-    public static void Success(string message) => Log(LogLevel.Info, message, GREEN);
     public static void Warning(string message) => Log(LogLevel.Warning, message, YELLOW);
     public static void Error(string message) => Log(LogLevel.Error, message, RED);
 

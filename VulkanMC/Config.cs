@@ -2,6 +2,7 @@ using System;
 using System.IO;
 using Tomlyn;
 using Silk.NET.Input;
+using VulkanMC.Core;
 
 namespace VulkanMC;
 
@@ -80,7 +81,7 @@ public static class Config
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"[ERROR] Failed to load config: {ex.Message}. Using defaults.");
+                Logger.Error($"Failed to load config: {ex.Message}. Using defaults.");
                 Data = new ConfigData();
             }
         }
@@ -100,7 +101,7 @@ public static class Config
         }
         catch (Exception ex)
         {
-            Console.WriteLine($"[ERROR] Failed to save config: {ex.Message}");
+            Logger.Error($"Failed to save config: {ex.Message}");
         }
     }
 }

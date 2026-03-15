@@ -27,7 +27,9 @@ public class World
         float noiseValue = (baseNoise + 1.0f) * 0.5f;
         float detailValue = (detailNoise + 1.0f) * 0.5f;
 
-        int h = (int)(noiseValue * 25.0f + detailValue * 5.0f) + 5;
+        // Correction : garantir que le spawn est toujours sur la surface
+        int h = (int)(noiseValue * 25.0f + detailValue * 5.0f) + 8; // offset +3
+        if (h < 10) h = 10; // minimum
         if (h > 60) h = 60;
         return (float)h;
     }
