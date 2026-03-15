@@ -54,7 +54,6 @@ public partial class VulkanEngine : IDisposable
     private CommandBuffer[] _commandBuffers = [];
     private Semaphore _imageAvailableSemaphore;
     private Semaphore _renderFinishedSemaphore;
-    private bool _spawnProtected = true;
     private Fence _inFlightFence;
 
     private Vector3D<float> _cameraPos = new(0, 50, 0);

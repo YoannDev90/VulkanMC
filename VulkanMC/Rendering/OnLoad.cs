@@ -31,23 +31,11 @@ public partial class VulkanEngine
         }
 
         float spawnH = _world.GetHeightAt(0, 0);
-        int blockY = (int)MathF.Floor(spawnH);
-        float targetY = blockY + 2.8f;
-        // Attendre que le chunk central soit chargé
-        if (_world.IsChunkLoaded(0, 0))
-        {
-            _cameraPos = new Vector3D<float>(0.5f, targetY, 0.5f);
-            _spawnProtected = false;
-            Logger.Debug($"Chunk central chargé, protection désactivée. CameraPos: {_cameraPos}");
-        }
-        else
-        {
-            // Place temporairement le joueur en hauteur
-            _cameraPos = new Vector3D<float>(0.5f, spawnH + 10.0f, 0.5f);
-            _spawnProtected = true;
-            Logger.Debug($"Chunk central non chargé, protection activée. CameraPos: {_cameraPos}");
-        }
+        int surfaceY = (int)MathF.Floor(spawnH);
+        // Placement Minecraft : sur le bloc le plus haut + 1
+        _cameraPos = new Vector3D<float>(0.5f, surfaceY + 1.0f, 0.5f);
         _verticalVelocity = 0;
+        Logger.Debug($"Spawn Minecraft: CameraPos: {_cameraPos} (surfaceY: {surfaceY})");
 
         Logger.Info($"Camera spawn at: {_cameraPos} (Ground height: {spawnH})");
 

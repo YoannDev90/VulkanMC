@@ -9,25 +9,6 @@ public partial class VulkanEngine
     private void UpdatePositionWithCollisions(float dt)
     {
         if (_input == null || _input.Keyboards.Count == 0) return;
-        if (_spawnProtected)
-        {
-            Logger.Debug($"CameraPos: {_cameraPos} | Protection: {_spawnProtected}");
-            if (_world != null && _world.IsChunkLoaded(0, 0))
-            {
-                int blockX = (int)MathF.Floor(_cameraPos.X);
-                int blockY = (int)MathF.Floor(_cameraPos.Y - 1.8f);
-                int blockZ = (int)MathF.Floor(_cameraPos.Z);
-                if (_world.IsBlockAt(blockX, blockY, blockZ))
-                {
-                    float targetY = blockY + 2.8f;
-                    Logger.Debug($"Bloc détecté sous le joueur, placement à {targetY}");
-                    _cameraPos.Y = targetY;
-                    _verticalVelocity = 0;
-                    _spawnProtected = false;
-                }
-            }
-            return;
-        }
         var k = _input.Keyboards[0];
         float s = 10f * dt;
         var nextPos = _cameraPos;
@@ -42,6 +23,7 @@ public partial class VulkanEngine
         if (k.IsKeyPressed(Key.Space)) nextPos.Y += s;
         if (k.IsKeyPressed(Key.ShiftLeft)) nextPos.Y -= s;
 
+        bool grounded = false;
         if (Config.Data.Physics.GravityEnabled)
         {
             _verticalVelocity -= 20f * dt;
@@ -51,7 +33,6 @@ public partial class VulkanEngine
             int blockY = (int)MathF.Floor(nextPos.Y - 1.8f);
             int blockZ = (int)MathF.Floor(nextPos.Z);
 
-            bool grounded = false;
             const float epsilon = 0.005f;
             float targetY = (float)blockY + 2.8f;
             bool blockDetected = _world != null && (
@@ -67,9 +48,13 @@ public partial class VulkanEngine
                 grounded = true;
             }
 
-            if (nextPos.Y < 2.0f)
+            // Correction Minecraft : ne jamais descendre sous la hauteur de spawn
+            float spawnH = _world != null ? _world.GetHeightAt(0, 0) : 0f;
+            int surfaceY = (int)MathF.Floor(spawnH);
+            float minY = surfaceY + 1.0f;
+            if (nextPos.Y < minY)
             {
-                nextPos.Y = 2.0f;
+                nextPos.Y = minY;
                 _verticalVelocity = 0;
                 grounded = true;
             }
@@ -78,39 +63,34 @@ public partial class VulkanEngine
             {
                 _verticalVelocity = 8.0f;
             }
-
-            if (Config.Data.Physics.AutoJump && grounded && (k.IsKeyPressed(Key.W) || k.IsKeyPressed(Key.S) || k.IsKeyPressed(Key.A) || k.IsKeyPressed(Key.D)))
+        }
+        if (Config.Data.Physics.AutoJump && grounded && (k.IsKeyPressed(Key.W) || k.IsKeyPressed(Key.S) || k.IsKeyPressed(Key.A) || k.IsKeyPressed(Key.D)))
+        {
+            Vector3D<float> moveDir = nextPos - _cameraPos;
+            moveDir.Y = 0;
+            if (moveDir.Length > 0.001f)
             {
-                Vector3D<float> moveDir = nextPos - _cameraPos;
-                moveDir.Y = 0;
-                if (moveDir.Length > 0.001f)
-                {
-                    moveDir = Vector3D.Normalize(moveDir);
-                    Vector3D<float> checkPos = nextPos + moveDir * 0.5f;
-                    int cx = (int)MathF.Floor(checkPos.X);
-                    int cy = (int)MathF.Floor(checkPos.Y - 0.8f);
-                    int cz = (int)MathF.Floor(checkPos.Z);
+                moveDir = Vector3D.Normalize(moveDir);
+                Vector3D<float> checkPos = nextPos + moveDir * 0.5f;
+                int cx = (int)MathF.Floor(checkPos.X);
+                int cy = (int)MathF.Floor(checkPos.Y - 0.8f);
+                int cz = (int)MathF.Floor(checkPos.Z);
 
-                    if (_world != null && _world.IsBlockAt(cx, cy, cz))
+                if (_world != null && _world.IsBlockAt(cx, cy, cz))
+                {
+                    if (!_world.IsBlockAt(cx, cy + 1, cz))
                     {
-                        if (!_world.IsBlockAt(cx, cy + 1, cz))
-                        {
-                            _verticalVelocity = 5.5f;
-                        }
+                        _verticalVelocity = 5.5f;
                     }
                 }
             }
-
-            if (_frameCount % 60 == 0)
-            {
-                Logger.Debug($"Pos: {nextPos.X:F1}, {nextPos.Y:F1}, {nextPos.Z:F1} | Grounded: {grounded} | Vel: {_verticalVelocity:F2}");
-            }
         }
-        _cameraPos = nextPos;
 
         if (_frameCount % 60 == 0)
         {
-            Logger.Debug($"Pos: {_cameraPos.X:F2}, {_cameraPos.Y:F2}, {_cameraPos.Z:F2} | Vel: {_verticalVelocity:F2}");
+            Logger.Debug($"Pos: {nextPos.X:F1}, {nextPos.Y:F1}, {nextPos.Z:F1} | Grounded: {grounded} | Vel: {_verticalVelocity:F2}");
         }
+
+        _cameraPos = nextPos;
     }
 }
