@@ -1,11 +1,12 @@
 using System;
+using VulkanMC.Platform;
 using System.Collections.Generic;
 using System.IO;
 using Silk.NET.Maths;
 using SkiaSharp;
 using AppConfig = VulkanMC.Config;
 using VulkanMC;
-using VulkanMC.Platform;
+// using VulkanMC.Platform; // Remove, as Platform is not a direct sub-namespace of VulkanMC
 using VulkanMC.Core;
 
 namespace VulkanMC.UI;

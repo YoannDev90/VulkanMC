@@ -56,6 +56,11 @@ public partial class VulkanEngine : IDisposable
     private Vector3D<float> _cameraFront = new(0, 0, -1);
     private Vector3D<float> _cameraUp = Vector3D<float>.UnitY;
 
+    // FPS tracking fields for OnUpdate
+    private double _fpsTimer = 0;
+    private int _fpsCounter = 0;
+    private int _lastFps = 0;
+
     private Image _textureImage;
     private DeviceMemory _textureImageMemory;
     private ImageView _textureImageView;

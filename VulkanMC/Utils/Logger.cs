@@ -1,4 +1,4 @@
-using System;
+// ...existing code from Logger.cs...using System;
 
 namespace VulkanMC.Core;
 
