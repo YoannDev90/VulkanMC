@@ -41,7 +41,7 @@ public partial class VulkanEngine
             }
             if (_input.Keyboards[0].IsKeyPressed(Key.Delete))
             {
-                Environment.Exit(0);
+                Process.GetCurrentProcess().Kill();
             }
         }
         if (_isPaused) return;
@@ -230,7 +230,6 @@ public partial class VulkanEngine
     private void UpdateChunksLoop()
     {
         const int maxEffectiveRenderDistance = 12;
-        const int maxUploadsPerPass = 6;
 
         while (_window != null)
         {
@@ -242,14 +241,15 @@ public partial class VulkanEngine
 
             int centerChunkX = (int)MathF.Floor(camPos.X / chunkSize);
             int centerChunkZ = (int)MathF.Floor(camPos.Z / chunkSize);
-            int uploadsQueued = 0;
 
+            // Collect all chunks to load
+            var chunksToLoad = new List<(int x, int z, float distSq)>();
             for (int x = -renderDistance; x <= renderDistance; x++)
             {
                 for (int z = -renderDistance; z <= renderDistance; z++)
                 {
-                    // Circular loading area to avoid loading expensive corner chunks.
-                    if (x * x + z * z > renderDistance * renderDistance) continue;
+                    float distSq = x * x + z * z;
+                    if (distSq > renderDistance * renderDistance) continue;
 
                     int chunkX = centerChunkX + x;
                     int chunkZ = centerChunkZ + z;
@@ -257,16 +257,28 @@ public partial class VulkanEngine
 
                     if (!_chunkMeshes.ContainsKey(pos))
                     {
-                        var (vertices, indices) = _world.GenerateChunk(chunkX, chunkZ, chunkSize, chunkSize);
-                        if (indices.Length > 0)
-                        {
-                            if (uploadsQueued >= maxUploadsPerPass) continue;
-                            _pendingUploads.Enqueue(() => UploadMesh(pos, vertices, indices));
-                            uploadsQueued++;
-                        }
+                        chunksToLoad.Add((chunkX, chunkZ, distSq));
                     }
                 }
             }
+
+            // Sort by distance (closest first)
+            chunksToLoad.Sort((a, b) => a.distSq.CompareTo(b.distSq));
+
+            // Generate chunks in parallel
+            Parallel.ForEach(chunksToLoad, new ParallelOptions { MaxDegreeOfParallelism = Environment.ProcessorCount }, chunk =>
+            {
+                var pos = new Vector2D<int>(chunk.x, chunk.z);
+                if (!_chunkMeshes.ContainsKey(pos))
+                {
+                    var (vertices, indices) = _world.GenerateChunk(chunk.x, chunk.z, chunkSize, chunkSize);
+                    if (indices.Length > 0)
+                    {
+                        _pendingUploads.Enqueue(() => UploadMesh(pos, vertices, indices));
+                    }
+                }
+            });
+
             Thread.Sleep(100);
         }
     }

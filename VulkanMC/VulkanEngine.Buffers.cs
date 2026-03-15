@@ -87,12 +87,12 @@ public partial class VulkanEngine
 
         for (int i = 0; i < textures.Length; i++)
         {
-            string path = Path.Combine(baseDir, "Textures", "block", textures[i]);
-            if (!File.Exists(path)) path = Path.Combine("Textures", "block", textures[i]);
+            string path = Path.Combine(baseDir, "Textures", "textures", "block", textures[i]);
+            if (!File.Exists(path)) path = Path.Combine("Textures", "textures", "block", textures[i]);
 
             using var stream = File.OpenRead(path);
             var img = ImageResult.FromStream(stream, ColorComponents.RedGreenBlueAlpha);
-            
+
             int offsetX = (i % 2) * 16;
             int offsetY = (i / 2) * 16;
 

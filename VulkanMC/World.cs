@@ -9,6 +9,7 @@ public class World
     // Stockage des blocs pour les collisions (x, y, z)
     private readonly HashSet<(int, int, int)> _blocks = new();
     private readonly Dictionary<(int, int), List<(int, int, int)>> _chunkBlockIndices = new();
+    private readonly object _worldLock = new object();
 
     public World(int seed = 42)
     {
@@ -55,16 +56,25 @@ public class World
                 // Only add to collision list if LOD 0
                 if (lod == 0)
                 {
-                    for (int y = 0; y < heights[x, z]; y++)
+                    lock (_worldLock)
                     {
-                        var blockPos = (offsetX + x, y, offsetZ + z);
-                        _blocks.Add(blockPos);
-                        blockList.Add(blockPos);
+                        for (int y = 0; y < heights[x, z]; y++)
+                        {
+                            var blockPos = (offsetX + x, y, offsetZ + z);
+                            _blocks.Add(blockPos);
+                            blockList.Add(blockPos);
+                        }
                     }
                 }
             }
         }
-        if (lod == 0) _chunkBlockIndices[(chunkX, chunkZ)] = blockList;
+        if (lod == 0)
+        {
+            lock (_worldLock)
+            {
+                _chunkBlockIndices[(chunkX, chunkZ)] = blockList;
+            }
+        }
 
         // 2. Générer les faces visibles
         for (int x = 0; x < width; x += step)
@@ -141,16 +151,25 @@ public class World
 
     public void UnloadChunk(int chunkX, int chunkZ)
     {
-        if (_chunkBlockIndices.Remove((chunkX, chunkZ), out var blockList))
+        lock (_worldLock)
         {
-            foreach (var pos in blockList)
+            if (_chunkBlockIndices.Remove((chunkX, chunkZ), out var blockList))
             {
-                _blocks.Remove(pos);
+                foreach (var pos in blockList)
+                {
+                    _blocks.Remove(pos);
+                }
             }
         }
     }
 
-    public bool IsChunkLoaded(int chunkX, int chunkZ) => _chunkBlockIndices.ContainsKey((chunkX, chunkZ));
+    public bool IsChunkLoaded(int chunkX, int chunkZ) 
+    {
+        lock (_worldLock)
+        {
+            return _chunkBlockIndices.ContainsKey((chunkX, chunkZ));
+        }
+    }
 
     public void UpdateChunks(Vector3D<float> cameraPos, int renderDistance)
     {
@@ -159,7 +178,10 @@ public class World
 
     public bool IsBlockAt(int x, int y, int z)
     {
-        return _blocks.Contains((x, y, z));
+        lock (_worldLock)
+        {
+            return _blocks.Contains((x, y, z));
+        }
     }
 
     private (float uMin, float vMin, float uMax, float vMax) GetUVs(BlockType type, bool isSide = false)

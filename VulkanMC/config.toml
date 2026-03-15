@@ -1,17 +1,37 @@
 [Rendering]
-RenderDistanceThreshold = 24
+RenderDistance = 24
+SimulationDistance = 16
+SmoothLighting = true
+Shadows = true
+UVs = true
 ChunkSize = 16
+WorldHeight = 256
 WorldSeed = 42
+
+[Textures]
+AtlasSize = 1024
+
+[Blocks]
+Air = 0
+Stone = 1
+Grass = 2
+Dirt = 3
+Cobblestone = 4
+Water = 7
+Sand = 8
+
 [Physics]
 BaseMovementSpeed = 150.0
 SprintMultiplier = 3.0
 JumpForce = 8.0
 Gravity = 25.0
 Drag = 10.0
+
 [Window]
 Width = 1280
 Height = 720
 Title = "VulkanMC Engine"
+
 [Controls]
 Forward = 87
 Backward = 83
@@ -21,5 +41,6 @@ Jump = 32
 Sprint = 340
 Escape = 256
 QuickExit = 261
+
 [Hardware]
 PreferredGpuName = "AMD Radeon RX 6500 (RADV NAVI24)"
