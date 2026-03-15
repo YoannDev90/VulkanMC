@@ -27,10 +27,12 @@ public partial class VulkanEngine
         CreateRenderPass();
         CreateDescriptorSetLayout();
         CreateGraphicsPipeline();
+        CreateUiPipeline();
         CreateCommandPool();
-        CreateColorResources(); 
+        CreateColorResources();
         CreateDepthResources();
         CreateTextureImage();
+        CreateUiTextureImage();
         CreateTextureImageView();
         CreateTextureSampler();
         CreateDescriptorPool();
@@ -73,7 +75,7 @@ public partial class VulkanEngine
         _vk!.CreateDevice(_physicalDevice, &info, null, out _device);
         _vk.GetDeviceQueue(_device, 0, 0, out _graphicsQueue);
         SilkMarshal.Free((IntPtr)pExts);
-        
+
         if (!_vk.TryGetDeviceExtension(_instance, _device, out _khrSwapchain))
         {
             throw new NotSupportedException("KHR_swapchain extension not found.");
@@ -178,20 +180,28 @@ public partial class VulkanEngine
 
     private unsafe void CreateDescriptorPool()
     {
-        var size = new DescriptorPoolSize { Type = DescriptorType.CombinedImageSampler, DescriptorCount = 1 };
-        var info = new DescriptorPoolCreateInfo { SType = StructureType.DescriptorPoolCreateInfo, MaxSets = 1, PoolSizeCount = 1, PPoolSizes = &size };
+        var size = new DescriptorPoolSize { Type = DescriptorType.CombinedImageSampler, DescriptorCount = 2 };
+        var info = new DescriptorPoolCreateInfo { SType = StructureType.DescriptorPoolCreateInfo, MaxSets = 2, PoolSizeCount = 1, PPoolSizes = &size };
         _vk!.CreateDescriptorPool(_device, &info, null, out _descriptorPool);
     }
 
     private unsafe void CreateDescriptorSets()
     {
-        fixed(DescriptorSetLayout* pL = &_descriptorSetLayout) {
+        fixed (DescriptorSetLayout* pL = &_descriptorSetLayout)
+        {
             var alloc = new DescriptorSetAllocateInfo { SType = StructureType.DescriptorSetAllocateInfo, DescriptorPool = _descriptorPool, DescriptorSetCount = 1, PSetLayouts = pL };
             _vk!.AllocateDescriptorSets(_device, &alloc, out _descriptorSet);
+
+            alloc.DescriptorSetCount = 1;
+            _vk.AllocateDescriptorSets(_device, &alloc, out _uiDescriptorSet);
         }
         var imageInfo = new DescriptorImageInfo { ImageLayout = ImageLayout.ShaderReadOnlyOptimal, ImageView = _textureImageView, Sampler = _textureSampler };
         var write = new WriteDescriptorSet { SType = StructureType.WriteDescriptorSet, DstSet = _descriptorSet, DstBinding = 0, DstArrayElement = 0, DescriptorType = DescriptorType.CombinedImageSampler, DescriptorCount = 1, PImageInfo = &imageInfo };
-        _vk.UpdateDescriptorSets(_device, 1, &write, 0, null);
+        _vk!.UpdateDescriptorSets(_device, 1, &write, 0, null);
+
+        var uiImageInfo = new DescriptorImageInfo { ImageLayout = ImageLayout.ShaderReadOnlyOptimal, ImageView = _uiTextureImageView, Sampler = _textureSampler };
+        var uiWrite = new WriteDescriptorSet { SType = StructureType.WriteDescriptorSet, DstSet = _uiDescriptorSet, DstBinding = 0, DstArrayElement = 0, DescriptorType = DescriptorType.CombinedImageSampler, DescriptorCount = 1, PImageInfo = &uiImageInfo };
+        _vk.UpdateDescriptorSets(_device, 1, &uiWrite, 0, null);
     }
 
     private unsafe void CreateCommandPool()
@@ -217,5 +227,75 @@ public partial class VulkanEngine
         _vk!.CreateSemaphore(_device, &sInfo, null, out _imageAvailableSemaphore);
         _vk.CreateSemaphore(_device, &sInfo, null, out _renderFinishedSemaphore);
         _vk.CreateFence(_device, &fInfo, null, out _inFlightFence);
+    }
+
+    private unsafe void CreateUiTextureImage()
+    {
+        if (_debugOverlay == null) return;
+        var atlasData = _debugOverlay.GetAtlasData();
+        uint w = _debugOverlay.AtlasWidth;
+        uint h = _debugOverlay.AtlasHeight;
+        ulong size = (ulong)atlasData.Length;
+
+        CreateBuffer(size, BufferUsageFlags.TransferSrcBit, MemoryPropertyFlags.HostVisibleBit | MemoryPropertyFlags.HostCoherentBit, out var staging, out var stagingMem);
+        void* data; _vk!.MapMemory(_device, stagingMem, 0, size, 0, &data);
+        fixed (byte* p = atlasData) { System.Buffer.MemoryCopy(p, data, (long)size, (long)size); }
+        _vk.UnmapMemory(_device, stagingMem);
+
+        CreateImage(w, h, Format.R8Unorm, ImageTiling.Optimal, ImageUsageFlags.TransferDstBit | ImageUsageFlags.SampledBit, MemoryPropertyFlags.DeviceLocalBit, out _uiTextureImage, out _uiTextureImageMemory);
+        TransitionImageLayout(_uiTextureImage, Format.R8Unorm, ImageLayout.Undefined, ImageLayout.TransferDstOptimal);
+        CopyBufferToImage(staging, _uiTextureImage, w, h);
+        TransitionImageLayout(_uiTextureImage, Format.R8Unorm, ImageLayout.TransferDstOptimal, ImageLayout.ShaderReadOnlyOptimal);
+        _vk.DestroyBuffer(_device, staging, null); _vk.FreeMemory(_device, stagingMem, null);
+        _uiTextureImageView = CreateImageView(_uiTextureImage, Format.R8Unorm, ImageAspectFlags.ColorBit);
+    }
+
+    private unsafe void CreateUiPipeline()
+    {
+        string vPath = "Shaders/ui.vert.spv";
+        string fPath = "Shaders/ui.frag.spv";
+        if (!File.Exists(vPath)) vPath = Path.Combine("/home/yoann/Documents/GitHub/VulkanMC/VulkanMC", vPath);
+        if (!File.Exists(fPath)) fPath = Path.Combine("/home/yoann/Documents/GitHub/VulkanMC/VulkanMC", fPath);
+
+        var vCode = File.ReadAllBytes(vPath);
+        var fCode = File.ReadAllBytes(fPath);
+        var vMod = CreateShaderModule(vCode);
+        var fMod = CreateShaderModule(fCode);
+
+        var entry = (byte*)SilkMarshal.StringToPtr("main");
+        var stages = stackalloc PipelineShaderStageCreateInfo[2];
+        stages[0] = new PipelineShaderStageCreateInfo { SType = StructureType.PipelineShaderStageCreateInfo, Stage = ShaderStageFlags.VertexBit, Module = vMod, PName = entry };
+        stages[1] = new PipelineShaderStageCreateInfo { SType = StructureType.PipelineShaderStageCreateInfo, Stage = ShaderStageFlags.FragmentBit, Module = fMod, PName = entry };
+
+        // UI Vertex: vec2 pos, vec2 uv
+        var binding = new VertexInputBindingDescription { Binding = 0, Stride = 16, InputRate = VertexInputRate.Vertex };
+        var attrs = stackalloc VertexInputAttributeDescription[2];
+        attrs[0] = new VertexInputAttributeDescription { Binding = 0, Location = 0, Format = Format.R32G32Sfloat, Offset = 0 };
+        attrs[1] = new VertexInputAttributeDescription { Binding = 0, Location = 1, Format = Format.R32G32Sfloat, Offset = 8 };
+
+        var pInfo = new PipelineVertexInputStateCreateInfo { SType = StructureType.PipelineVertexInputStateCreateInfo, VertexBindingDescriptionCount = 1, PVertexBindingDescriptions = &binding, VertexAttributeDescriptionCount = 2, PVertexAttributeDescriptions = attrs };
+        var iaInfo = new PipelineInputAssemblyStateCreateInfo { SType = StructureType.PipelineInputAssemblyStateCreateInfo, Topology = PrimitiveTopology.TriangleList };
+        var vp = new Viewport(0, 0, _swapchainExtent.Width, _swapchainExtent.Height, 0, 1);
+        var sc = new Rect2D(new Offset2D(0, 0), _swapchainExtent);
+        var vpInfo = new PipelineViewportStateCreateInfo { SType = StructureType.PipelineViewportStateCreateInfo, ViewportCount = 1, PViewports = &vp, ScissorCount = 1, PScissors = &sc };
+        var rsInfo = new PipelineRasterizationStateCreateInfo { SType = StructureType.PipelineRasterizationStateCreateInfo, CullMode = CullModeFlags.None, FrontFace = FrontFace.CounterClockwise, LineWidth = 1.0f };
+        var msInfo = new PipelineColorBlendAttachmentState { BlendEnable = true, SrcColorBlendFactor = BlendFactor.SrcAlpha, DstColorBlendFactor = BlendFactor.OneMinusSrcAlpha, ColorBlendOp = BlendOp.Add, SrcAlphaBlendFactor = BlendFactor.One, DstAlphaBlendFactor = BlendFactor.Zero, AlphaBlendOp = BlendOp.Add, ColorWriteMask = ColorComponentFlags.RBit | ColorComponentFlags.GBit | ColorComponentFlags.BBit | ColorComponentFlags.ABit };
+        var msState = new PipelineMultisampleStateCreateInfo { SType = StructureType.PipelineMultisampleStateCreateInfo, RasterizationSamples = SampleCountFlags.Count4Bit };
+        var dsInfo = new PipelineDepthStencilStateCreateInfo { SType = StructureType.PipelineDepthStencilStateCreateInfo, DepthTestEnable = false, DepthWriteEnable = false };
+        var cbInfo = new PipelineColorBlendStateCreateInfo { SType = StructureType.PipelineColorBlendStateCreateInfo, AttachmentCount = 1, PAttachments = &msInfo };
+        var push = new PushConstantRange { StageFlags = ShaderStageFlags.VertexBit, Size = (uint)sizeof(UiPushConstants) };
+
+        fixed (DescriptorSetLayout* pDSL = &_descriptorSetLayout)
+        {
+            var plInfo = new PipelineLayoutCreateInfo { SType = StructureType.PipelineLayoutCreateInfo, SetLayoutCount = 1, PSetLayouts = pDSL, PushConstantRangeCount = 1, PPushConstantRanges = &push };
+            _vk!.CreatePipelineLayout(_device, &plInfo, null, out _uiPipelineLayout);
+        }
+
+        var pipeInfo = new GraphicsPipelineCreateInfo { SType = StructureType.GraphicsPipelineCreateInfo, StageCount = 2, PStages = stages, PVertexInputState = &pInfo, PInputAssemblyState = &iaInfo, PViewportState = &vpInfo, PRasterizationState = &rsInfo, PMultisampleState = &msState, PDepthStencilState = &dsInfo, PColorBlendState = &cbInfo, Layout = _uiPipelineLayout, RenderPass = _renderPass };
+        _vk.CreateGraphicsPipelines(_device, default, 1, &pipeInfo, null, out _uiPipeline);
+
+        _vk.DestroyShaderModule(_device, vMod, null);
+        _vk.DestroyShaderModule(_device, fMod, null);
+        SilkMarshal.Free((IntPtr)entry);
     }
 }

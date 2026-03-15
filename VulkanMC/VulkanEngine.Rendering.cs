@@ -17,47 +17,47 @@ public partial class VulkanEngine
         uint imageIndex = 0;
         var result = _khrSwapchain!.AcquireNextImage(_device, _swapchain, ulong.MaxValue, _imageAvailableSemaphore, default, ref imageIndex);
         if (result == Result.ErrorOutOfDateKhr) { RecreateSwapchain(); return; }
-        DrawFrame(imageIndex);
+        DrawFrame(imageIndex, dt);
 
         var waitSem = _imageAvailableSemaphore;
         var waitStage = PipelineStageFlags.ColorAttachmentOutputBit;
         var signalSem = _renderFinishedSemaphore;
         var cmdBuf = _commandBuffers[imageIndex];
 
-        var submitInfo = new SubmitInfo 
-        { 
-            SType = StructureType.SubmitInfo, 
-            WaitSemaphoreCount = 1, 
-            PWaitSemaphores = &waitSem, 
-            PWaitDstStageMask = &waitStage, 
-            CommandBufferCount = 1, 
-            PCommandBuffers = &cmdBuf, 
-            SignalSemaphoreCount = 1, 
-            PSignalSemaphores = &signalSem 
+        var submitInfo = new SubmitInfo
+        {
+            SType = StructureType.SubmitInfo,
+            WaitSemaphoreCount = 1,
+            PWaitSemaphores = &waitSem,
+            PWaitDstStageMask = &waitStage,
+            CommandBufferCount = 1,
+            PCommandBuffers = &cmdBuf,
+            SignalSemaphoreCount = 1,
+            PSignalSemaphores = &signalSem
         };
         _vk!.QueueSubmit(_graphicsQueue, 1, &submitInfo, _inFlightFence);
 
         var swapchain = _swapchain;
-        var presentInfo = new PresentInfoKHR 
-        { 
-            SType = StructureType.PresentInfoKhr, 
-            WaitSemaphoreCount = 1, 
-            PWaitSemaphores = &signalSem, 
-            SwapchainCount = 1, 
-            PSwapchains = &swapchain, 
-            PImageIndices = &imageIndex 
+        var presentInfo = new PresentInfoKHR
+        {
+            SType = StructureType.PresentInfoKhr,
+            WaitSemaphoreCount = 1,
+            PWaitSemaphores = &signalSem,
+            SwapchainCount = 1,
+            PSwapchains = &swapchain,
+            PImageIndices = &imageIndex
         };
         _khrSwapchain.QueuePresent(_graphicsQueue, &presentInfo);
     }
 
-    private unsafe void DrawFrame(uint imageIndex)
+    private unsafe void DrawFrame(uint imageIndex, double dt)
     {
         ProcessPendingUploads();
         var cb = _commandBuffers[imageIndex];
         var beginInfo = new CommandBufferBeginInfo { SType = StructureType.CommandBufferBeginInfo };
         _vk!.BeginCommandBuffer(cb, &beginInfo);
         var clear = stackalloc ClearValue[2];
-        clear[0].Color = new ClearColorValue(0.53f, 0.81f, 0.92f, 1.0f);
+        clear[0].Color = new ClearColorValue(0.40f, 0.65f, 0.82f, 1.0f);
         clear[1].DepthStencil = new ClearDepthStencilValue(1.0f, 0);
         var rpInfo = new RenderPassBeginInfo { SType = StructureType.RenderPassBeginInfo, RenderPass = _renderPass, Framebuffer = _framebuffers[imageIndex], RenderArea = new Rect2D(new Offset2D(0, 0), _swapchainExtent), ClearValueCount = 2, PClearValues = clear };
         _vk.CmdBeginRenderPass(cb, &rpInfo, SubpassContents.Inline);
@@ -67,12 +67,12 @@ public partial class VulkanEngine
         var proj = Matrix4x4.CreatePerspectiveFieldOfView(1.0f, (float)_swapchainExtent.Width / _swapchainExtent.Height, 0.1f, 1000.0f);
         proj.M22 *= -1;
         var viewProj = view * proj;
-        
+
         uint drawCount = 0;
         foreach (var mesh in _chunkMeshes.Values)
         {
             if (!mesh.IsReady) continue;
-            
+
             var push = new PushConstant { MVP = viewProj };
             _vk.CmdPushConstants(cb, _pipelineLayout, ShaderStageFlags.VertexBit, 0, (uint)sizeof(PushConstant), &push);
             var vBuf = mesh.VertexBuffer; ulong off = 0;
@@ -82,14 +82,98 @@ public partial class VulkanEngine
             drawCount++;
         }
 
-        if (drawCount == 0 && _frameCount % 60 == 0)
+        if (_debugOverlay != null)
         {
-             Console.WriteLine($"[{DateTime.Now:HH:mm:ss.fff}] [WARN] DrawFrame sending 0 draw calls! ChunkCount: {_chunkMeshes.Count}");
+            _debugOverlay.Update(dt, _cameraPos, (int)Math.Floor(_cameraPos.X / 16), (int)Math.Floor(_cameraPos.Z / 16));
+            DrawUi(cb);
         }
 
         _vk.CmdEndRenderPass(cb);
         _vk.EndCommandBuffer(cb);
         _frameCount++;
+    }
+
+    private unsafe void DrawUi(CommandBuffer cb)
+    {
+        if (_debugOverlay == null || string.IsNullOrEmpty(_debugOverlay.CurrentDebugString)) return;
+
+        UpdateUiBuffers();
+        if (_uiVertexCount == 0) return;
+
+        _vk!.CmdBindPipeline(cb, PipelineBindPoint.Graphics, _uiPipeline);
+        _vk.CmdBindDescriptorSets(cb, PipelineBindPoint.Graphics, _uiPipelineLayout, 0, 1, ref _uiDescriptorSet, 0, null);
+
+        var push = new UiPushConstants { Scale = new Vector2D<float>(2.0f / _swapchainExtent.Width, 2.0f / _swapchainExtent.Height), Translate = new Vector2D<float>(-1, -0.95f) };
+        _vk.CmdPushConstants(cb, _uiPipelineLayout, ShaderStageFlags.VertexBit, 0, (uint)sizeof(UiPushConstants), &push);
+
+        ulong offset = 0;
+        _vk.CmdBindVertexBuffers(cb, 0, 1, ref _uiVertexBuffer, ref offset);
+        _vk.CmdDraw(cb, _uiVertexCount, 1, 0, 0);
+    }
+
+    private unsafe void UpdateUiBuffers()
+    {
+        if (_debugOverlay == null) return;
+        string text = _debugOverlay.CurrentDebugString;
+        var vertices = new List<float>();
+
+        float x = 10;
+        float y = 30; // Increased from 10 to 30 to move it down
+        float scale = 1.0f;
+
+        foreach (char c in text)
+        {
+            if (!_debugOverlay.Glyphs.TryGetValue(c, out var glyph)) continue;
+
+            float x0 = x + glyph.Bearing.X * scale;
+            float y1 = y + (glyph.Size.Y - glyph.Bearing.Y) * scale;
+            float x1 = x0 + glyph.Size.X * scale;
+            float y0 = y1 - glyph.Size.Y * scale;
+
+            float u0 = glyph.UVStart.X;
+            float v0 = glyph.UVStart.Y;
+            float u1 = glyph.UVEnd.X;
+            float v1 = glyph.UVEnd.Y;
+
+            // Two triangles
+            vertices.AddRange(new[] { x0, y0, u0, v0 });
+            vertices.AddRange(new[] { x0, y1, u0, v1 });
+            vertices.AddRange(new[] { x1, y1, u1, v1 });
+
+            vertices.AddRange(new[] { x0, y0, u0, v0 });
+            vertices.AddRange(new[] { x1, y1, u1, v1 });
+            vertices.AddRange(new[] { x1, y0, u1, v0 });
+
+            x += glyph.Advance * scale;
+        }
+
+        _uiVertexCount = (uint)(vertices.Count / 4);
+        if (_uiVertexCount == 0) return;
+
+        ulong size = (ulong)(vertices.Count * sizeof(float));
+        if (_uiVertexBuffer.Handle == 0 || size > GetBufferSize(_uiVertexBuffer))
+        {
+            if (_uiVertexBuffer.Handle != 0)
+            {
+                _vk!.DestroyBuffer(_device, _uiVertexBuffer, null);
+                _vk.FreeMemory(_device, _uiVertexMemory, null);
+            }
+            CreateBuffer(size, BufferUsageFlags.VertexBufferBit, MemoryPropertyFlags.HostVisibleBit | MemoryPropertyFlags.HostCoherentBit, out _uiVertexBuffer, out _uiVertexMemory);
+        }
+
+        void* data;
+        _vk!.MapMemory(_device, _uiVertexMemory, 0, size, 0, &data);
+        fixed (float* p = vertices.ToArray())
+        {
+            System.Buffer.MemoryCopy(p, data, (long)size, (long)size);
+        }
+        _vk.UnmapMemory(_device, _uiVertexMemory);
+    }
+
+    private ulong GetBufferSize(Silk.NET.Vulkan.Buffer buffer)
+    {
+        _vk!.GetBufferMemoryRequirements(_device, buffer, out var req);
+        return req.Size;
     }
 
     private void RecreateSwapchain()
@@ -138,10 +222,10 @@ public class Frustum
     }
 }
 
-public struct Plane 
-{ 
-    public float A, B, C, D; 
-    public Plane(float a, float b, float c, float d) { A = a; B = b; C = c; D = d; } 
-    public void Normalize() { float len = MathF.Sqrt(A*A + B*B + C*C); A /= len; B /= len; C /= len; D /= len; } 
+public struct Plane
+{
+    public float A, B, C, D;
+    public Plane(float a, float b, float c, float d) { A = a; B = b; C = c; D = d; }
+    public void Normalize() { float len = MathF.Sqrt(A * A + B * B + C * C); A /= len; B /= len; C /= len; D /= len; }
     public float Dot(Vector3D<float> p) => A * p.X + B * p.Y + C * p.Z + D;
 }

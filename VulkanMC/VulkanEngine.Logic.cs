@@ -12,7 +12,6 @@ public partial class VulkanEngine
     private double _fpsTimer = 0;
     private int _fpsCounter = 0;
     private int _lastFps = 0;
-    private bool _debugOverlay = true;
 
     private void OnUpdate(double dt)
     {
@@ -24,12 +23,14 @@ public partial class VulkanEngine
             _lastFps = _fpsCounter;
             _fpsCounter = 0;
             _fpsTimer = 0;
-            
+
             if (_window != null)
             {
-                _window.Title = $"VulkanMC - FPS: {_lastFps}";
+                _window.Title = Config.Data.Window.Title;
             }
         }
+
+        _debugOverlay?.Update(dt, _cameraPos, (int)MathF.Floor(_cameraPos.X / Config.Data.Rendering.ChunkSize), (int)MathF.Floor(_cameraPos.Z / Config.Data.Rendering.ChunkSize));
 
         if (_input!.Keyboards.Count > 0)
         {
@@ -56,7 +57,7 @@ public partial class VulkanEngine
             float dy = (float)(_input.Mice[0].Position.Y - _lastMouseY.Value);
             _lastMouseX = _input.Mice[0].Position.X;
             _lastMouseY = _input.Mice[0].Position.Y;
-            
+
             _yaw += dx * 0.1f;
             _pitch -= dy * 0.1f;
             _pitch = Math.Clamp(_pitch, -89f, 89f);
@@ -90,7 +91,7 @@ public partial class VulkanEngine
         {
             _verticalVelocity -= 20f * dt;
             nextPos.Y += _verticalVelocity * dt;
-            
+
             // Check collisions at feet and slightly below
             int blockX = (int)MathF.Floor(nextPos.X);
             int blockY = (int)MathF.Floor(nextPos.Y - 1.8f);
@@ -98,7 +99,7 @@ public partial class VulkanEngine
 
             bool grounded = false;
             // Vérifier les collisions aux pieds (Y-1.8f) et légèrement au-dessus (Y-1.5f) pour plus de stabilité
-            if (_world != null && (_world.IsBlockAt(blockX, blockY, blockZ) || 
+            if (_world != null && (_world.IsBlockAt(blockX, blockY, blockZ) ||
                                    _world.IsBlockAt((int)MathF.Floor(nextPos.X + 0.3f), blockY, (int)MathF.Floor(nextPos.Z)) ||
                                    _world.IsBlockAt((int)MathF.Floor(nextPos.X - 0.3f), blockY, (int)MathF.Floor(nextPos.Z)) ||
                                    _world.IsBlockAt((int)MathF.Floor(nextPos.X), blockY, (int)MathF.Floor(nextPos.Z + 0.3f)) ||
@@ -107,11 +108,11 @@ public partial class VulkanEngine
                 // On place les pieds exactement au-dessus du bloc (Y = blockY + 1)
                 // Donc la caméra (tête) est à Y = blockY + 1 + 1.8f = blockY + 2.8f
                 // J'ajoute un très léger offset (0.01f) car sinon IsBlockAt pourrait renvoyer vrai au frame suivant
-                nextPos.Y = (float)blockY + 2.81f; 
+                nextPos.Y = (float)blockY + 2.81f;
                 _verticalVelocity = 0;
                 grounded = true;
             }
-            
+
             // Safety: Floor at Y=2.0 to stop infinite fall if world isn't loaded
             if (nextPos.Y < 2.0f)
             {
@@ -140,7 +141,7 @@ public partial class VulkanEngine
                     int cx = (int)MathF.Floor(checkPos.X);
                     int cy = (int)MathF.Floor(checkPos.Y - 0.8f); // On vérifie à hauteur de genou (un cran au dessus du bloc sur lequel on est)
                     int cz = (int)MathF.Floor(checkPos.Z);
-                    
+
                     if (_world != null && _world.IsBlockAt(cx, cy, cz))
                     {
                         // On vérifie qu'il n'y a pas de bloc au dessus (pour ne pas se cogner la tête)
@@ -158,7 +159,7 @@ public partial class VulkanEngine
             }
         }
         _cameraPos = nextPos;
-        
+
         if (_frameCount % 60 == 0)
         {
             Logger.Debug($"Pos: {_cameraPos.X:F2}, {_cameraPos.Y:F2}, {_cameraPos.Z:F2} | Vel: {_verticalVelocity:F2}");
@@ -173,7 +174,8 @@ public partial class VulkanEngine
         _input = _window!.CreateInput();
         _input.Mice[0].Cursor.CursorMode = CursorMode.Normal;
         _world = new World();
-        
+        _debugOverlay = new UI.TextOverlay();
+
         // Initialiser Vulkan AVANT pour pouvoir faire UploadMesh
         Logger.Info("Initializing Vulkan...");
         InitVulkan();
@@ -193,11 +195,11 @@ public partial class VulkanEngine
         float spawnH = _world.GetHeightAt(0, 0);
         _cameraPos = new Vector3D<float>(0.5f, spawnH + 2.0f, 0.5f);
         _verticalVelocity = 0;
-        
+
         Logger.Info($"Camera spawn at: {_cameraPos} (Ground height: {spawnH})");
 
         _input.Mice[0].Cursor.CursorMode = CursorMode.Raw;
-        
+
         sw.Stop();
         Logger.Info($"OnLoad completed in {sw.ElapsedMilliseconds}ms.");
 
@@ -208,7 +210,7 @@ public partial class VulkanEngine
     {
         var sw = System.Diagnostics.Stopwatch.StartNew();
         var mesh = new ChunkMesh { ChunkPos = pos, IndexCount = (uint)indices.Length };
-        
+
         ulong vSize = (ulong)(vertices.Length * sizeof(Vertex));
         CreateBuffer(vSize, BufferUsageFlags.VertexBufferBit, MemoryPropertyFlags.HostVisibleBit | MemoryPropertyFlags.HostCoherentBit, out mesh.VertexBuffer, out mesh.VertexMemory);
         void* vData; _vk!.MapMemory(_device, mesh.VertexMemory, 0, vSize, 0, &vData);

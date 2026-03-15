@@ -44,7 +44,7 @@ public class World
 
         // Step size based on LOD
         int step = (int)MathF.Pow(2, lod);
-        
+
         // 1. Générer la carte des hauteurs avec plus de variété
         int[,] heights = new int[width, depth];
         for (int x = 0; x < width; x++)
@@ -82,23 +82,26 @@ public class World
             for (int z = 0; z < depth; z += step)
             {
                 int h = heights[x, z];
-                
+
                 // For distant chunks, we might only render the top layer or fewer layers
-                int startY = (lod > 0) ? h - 1 : 0; 
-                
+                int startY = (lod > 0) ? h - 1 : 0;
+
                 for (int y = startY; y < h; y++)
                 {
                     Vector3D<float> blockPos = new Vector3D<float>(offsetX + x, y, offsetZ + z);
                     Vector3D<float> blockSize = new Vector3D<float>(step, (lod > 0 && y == h - 1) ? 1 : 1, step); // Larger blocks for high LOD
-                    
+
                     Vector3D<float> color = new Vector3D<float>(1.0f, 1.0f, 1.0f);
                     BlockType blockType;
-                    
+
                     if (y == h - 1)
                     {
-                        if (h > 45) { // Neige pour les montagnes hautes
+                        if (h > 45)
+                        { // Neige pour les montagnes hautes
                             blockType = BlockType.Snow;
-                        } else {
+                        }
+                        else
+                        {
                             blockType = BlockType.Grass;
                         }
                     }
@@ -113,17 +116,17 @@ public class World
 
                     // Culling logic: Don't render if surrounded by 6 opaque blocks
                     bool fBack, fFront, fLeft, fRight, fBottom, fTop;
-                    
+
                     if (lod == 0)
                     {
                         // Hidden from view if it has neighbors at same or higher height
-                        fBack   = (z == 0          || y >= (x < width && z > 0 ? heights[x, z - 1] : 0));
-                        fFront  = (z == depth - 1  || y >= (x < width && z < depth - 1 ? heights[x, z + 1] : 0));
-                        fLeft   = (x == 0          || y >= (x > 0 && z < depth ? heights[x - 1, z] : 0));
-                        fRight  = (x == width - 1  || y >= (x < width - 1 && z < depth ? heights[x + 1, z] : 0));
+                        fBack = (z == 0 || y >= (x < width && z > 0 ? heights[x, z - 1] : 0));
+                        fFront = (z == depth - 1 || y >= (x < width && z < depth - 1 ? heights[x, z + 1] : 0));
+                        fLeft = (x == 0 || y >= (x > 0 && z < depth ? heights[x - 1, z] : 0));
+                        fRight = (x == width - 1 || y >= (x < width - 1 && z < depth ? heights[x + 1, z] : 0));
                         fBottom = (y == 0);
-                        fTop    = (y == h - 1);
-                        
+                        fTop = (y == h - 1);
+
                         // Internal occlusion: if block is below the surface of ALL 4 neighbors, it's hidden from ground-level
                         // But wait, we only render faces that are exposed.
                     }
@@ -163,7 +166,7 @@ public class World
         }
     }
 
-    public bool IsChunkLoaded(int chunkX, int chunkZ) 
+    public bool IsChunkLoaded(int chunkX, int chunkZ)
     {
         lock (_worldLock)
         {
@@ -191,31 +194,34 @@ public class World
             BlockType.Grass => isSide ? 3 : 0,
             BlockType.Stone => 1,
             BlockType.Snow => 2,
-            BlockType.Dirt => 3, // Fallback dirt to side texture for now or stone
+            BlockType.Dirt => 3,
             _ => 1
         };
 
+        const float Padding = 0.005f;
+
         float u = (index % 2) * 0.5f;
         float v = (index / 2) * 0.5f;
-        return (u + 0.01f, v + 0.01f, u + 0.49f, v + 0.49f); // Petits offsets pour éviter le bleeding
+
+        return (u + Padding, v + Padding, u + 0.5f - Padding, v + 0.5f - Padding);
     }
 
-    private void AddVisibleFaces(List<Vertex> vertices, List<uint> indices, Vector3D<float> pos, Vector3D<float> color, 
+    private void AddVisibleFaces(List<Vertex> vertices, List<uint> indices, Vector3D<float> pos, Vector3D<float> color,
         bool back, bool front, bool left, bool right, bool bottom, bool top, BlockType type)
     {
         var (uMin, vMin, uMax, vMax) = GetUVs(type, false);
         var (suMin, svMin, suMax, svMax) = GetUVs(type, true);
 
         // Teinte verte pour le dessus de l'herbe
-        Vector3D<float> topColor = (type == BlockType.Grass) ? new Vector3D<float>(0.4f, 0.8f, 0.3f) : 
-                                   (type == BlockType.Snow)  ? new Vector3D<float>(1.0f, 1.0f, 1.0f) :
-                                   (type == BlockType.Dirt)  ? new Vector3D<float>(1.0f, 1.0f, 1.0f) : 
+        Vector3D<float> topColor = (type == BlockType.Grass) ? new Vector3D<float>(0.4f, 0.8f, 0.3f) :
+                                   (type == BlockType.Snow) ? new Vector3D<float>(1.0f, 1.0f, 1.0f) :
+                                   (type == BlockType.Dirt) ? new Vector3D<float>(1.0f, 1.0f, 1.0f) :
                                    (type == BlockType.Stone) ? new Vector3D<float>(1.0f, 1.0f, 1.0f) : color;
-        
-        // Teinte pour les côtés (on n'applique pas de teinte sur la texture grass_block_side par défaut, ou une légère)
-        Vector3D<float> sideColor = (type == BlockType.Grass) ? new Vector3D<float>(1.0f, 1.0f, 1.0f) : 
-                                    (type == BlockType.Snow)  ? new Vector3D<float>(1.0f, 1.0f, 1.0f) :
-                                    (type == BlockType.Dirt)  ? new Vector3D<float>(1.0f, 1.0f, 1.0f) : 
+
+        // Teinte pour les côtés
+        Vector3D<float> sideColor = (type == BlockType.Grass) ? new Vector3D<float>(1.0f, 1.0f, 1.0f) :
+                                    (type == BlockType.Snow) ? new Vector3D<float>(1.0f, 1.0f, 1.0f) :
+                                    (type == BlockType.Dirt) ? new Vector3D<float>(1.0f, 1.0f, 1.0f) :
                                     (type == BlockType.Stone) ? new Vector3D<float>(1.0f, 1.0f, 1.0f) : color;
 
         // Face Back (z-)
@@ -285,21 +291,21 @@ public class World
         }
     }
 
-    private void AddVisibleFacesLOD(List<Vertex> vertices, List<uint> indices, Vector3D<float> pos, Vector3D<float> color, 
+    private void AddVisibleFacesLOD(List<Vertex> vertices, List<uint> indices, Vector3D<float> pos, Vector3D<float> color,
         bool back, bool front, bool left, bool right, bool bottom, bool top, BlockType type, int step)
     {
         float s = (float)step;
         var (uMin, vMin, uMax, vMax) = GetUVs(type, false);
         var (suMin, svMin, suMax, svMax) = GetUVs(type, true);
 
-        Vector3D<float> topColor = (type == BlockType.Grass) ? new Vector3D<float>(0.4f, 0.8f, 0.3f) : 
-                                   (type == BlockType.Snow)  ? new Vector3D<float>(1.0f, 1.0f, 1.0f) :
-                                   (type == BlockType.Dirt)  ? new Vector3D<float>(1.0f, 1.0f, 1.0f) : 
+        Vector3D<float> topColor = (type == BlockType.Grass) ? new Vector3D<float>(0.4f, 0.8f, 0.3f) :
+                                   (type == BlockType.Snow) ? new Vector3D<float>(1.0f, 1.0f, 1.0f) :
+                                   (type == BlockType.Dirt) ? new Vector3D<float>(1.0f, 1.0f, 1.0f) :
                                    (type == BlockType.Stone) ? new Vector3D<float>(1.0f, 1.0f, 1.0f) : color;
-        
-        Vector3D<float> sideColor = (type == BlockType.Grass) ? new Vector3D<float>(1.0f, 1.0f, 1.0f) : 
-                                    (type == BlockType.Snow)  ? new Vector3D<float>(1.0f, 1.0f, 1.0f) :
-                                    (type == BlockType.Dirt)  ? new Vector3D<float>(1.0f, 1.0f, 1.0f) : 
+
+        Vector3D<float> sideColor = (type == BlockType.Grass) ? new Vector3D<float>(1.0f, 1.0f, 1.0f) :
+                                    (type == BlockType.Snow) ? new Vector3D<float>(1.0f, 1.0f, 1.0f) :
+                                    (type == BlockType.Dirt) ? new Vector3D<float>(1.0f, 1.0f, 1.0f) :
                                     (type == BlockType.Stone) ? new Vector3D<float>(1.0f, 1.0f, 1.0f) : color;
 
         // Face Back (z-)
