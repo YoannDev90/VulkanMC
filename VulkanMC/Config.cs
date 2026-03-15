@@ -25,7 +25,7 @@ public class PhysicsConfig
 {
     public float BaseMovementSpeed { get; set; } = 150.0f;
     public float SprintMultiplier { get; set; } = 3.0f;
-    public float JumpForce { get; set; } = 8.0f;
+    public float JumpForce { get; set; } = 9.5f;
     public float Gravity { get; set; } = 25.0f;
     public float Drag { get; set; } = 10.0f;
     public bool GravityEnabled { get; set; } = true;

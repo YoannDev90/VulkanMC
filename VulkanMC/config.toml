@@ -22,10 +22,11 @@ Sand = 8
 
 [Physics]
 BaseMovementSpeed = 150.0
-SprintMultiplier = 3.0
-JumpForce = 8.0
+SprintMultiplier = 1.9
+JumpForce = 9.5
 Gravity = 25.0
 Drag = 10.0
+AutoJump = true
 
 [Window]
 Width = 1280
@@ -44,3 +45,11 @@ QuickExit = 261
 
 [Hardware]
 PreferredGpuName = "AMD Radeon RX 6500 (RADV NAVI24)"
+
+[Gameplay]
+GameMode = "Survival" #Survival, Creative, Spectator
+Entities = false
+Trees = true
+Clouds = true
+Water = true
+Lava = true

@@ -38,6 +38,21 @@ public partial class VulkanEngine
             {
                 Process.GetCurrentProcess().Kill();
             }
+            // Natural auto-jump
+            if (Config.Data.Physics.AutoJump)
+            {
+                // Check if player is on ground and moving forward
+                bool isMoving = _input.Keyboards[0].IsKeyPressed(Config.Data.Controls.Forward) ||
+                                _input.Keyboards[0].IsKeyPressed(Config.Data.Controls.Backward) ||
+                                _input.Keyboards[0].IsKeyPressed(Config.Data.Controls.Left) ||
+                                _input.Keyboards[0].IsKeyPressed(Config.Data.Controls.Right);
+                bool isOnGround = IsPlayerOnGround();
+                bool jumpKeyHeld = _input.Keyboards[0].IsKeyPressed(Config.Data.Controls.Jump);
+                if (isMoving && isOnGround && !jumpKeyHeld)
+                {
+                    PerformJump(Config.Data.Physics.JumpForce);
+                }
+            }
         }
         if (_isPaused) return;
 
@@ -62,5 +77,33 @@ public partial class VulkanEngine
         f.Y = MathF.Sin(MathF.PI / 180 * _pitch);
         f.Z = MathF.Sin(MathF.PI / 180 * _yaw) * MathF.Cos(MathF.PI / 180 * _pitch);
         _cameraFront = Vector3D.Normalize(f);
+    }
+
+
+    // Returns true if player is on ground
+    private bool IsPlayerOnGround()
+    {
+        int blockX = (int)MathF.Floor(_cameraPos.X);
+        int blockY = (int)MathF.Floor(_cameraPos.Y - 1.8f);
+        int blockZ = (int)MathF.Floor(_cameraPos.Z);
+        float targetY = (float)blockY + 2.8f;
+        const float epsilon = 0.005f;
+        bool blockDetected = _world != null && (
+            _world.IsBlockAt(blockX, blockY, blockZ) ||
+            _world.IsBlockAt((int)MathF.Floor(_cameraPos.X + 0.3f), blockY, (int)MathF.Floor(_cameraPos.Z)) ||
+            _world.IsBlockAt((int)MathF.Floor(_cameraPos.X - 0.3f), blockY, (int)MathF.Floor(_cameraPos.Z)) ||
+            _world.IsBlockAt((int)MathF.Floor(_cameraPos.X), blockY, (int)MathF.Floor(_cameraPos.Z + 0.3f)) ||
+            _world.IsBlockAt((int)MathF.Floor(_cameraPos.X), blockY, (int)MathF.Floor(_cameraPos.Z - 0.3f)));
+        if (blockDetected && _cameraPos.Y < targetY - epsilon)
+            return true;
+        if (_cameraPos.Y < 2.0f)
+            return true;
+        return false;
+    }
+
+    // Applies jump force to vertical velocity
+    private void PerformJump(float jumpForce)
+    {
+        _verticalVelocity = jumpForce;
     }
 }
