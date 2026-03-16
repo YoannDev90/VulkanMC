@@ -22,7 +22,19 @@ jobs:
       - name: Build Linux
         run: dotnet publish VulkanMC/VulkanMC.csproj -c Release -r linux-x64 --self-contained -o build/linux
       - name: Build Windows
-        run: dotnet publish VulkanMC/VulkanMC.csproj -c Release -r win-x64 --self-contained -o build/win
+        run: |
+          dotnet publish VulkanMC/VulkanMC.csproj -c Release -r win-x64 --self-contained -o build/win
+          # Copie/renomme l'exécutable en racine build/ avec le nom attendu
+          if [ -f build/win/VulkanMC.exe ]; then
+            cp build/win/VulkanMC.exe build/vulkanmc-win-x64.exe
+          fi
+
+      - name: Copy assets to build/win
+        run: |
+          cp -r VulkanMC/Fonts build/win/
+          cp -r VulkanMC/Textures build/win/
+          cp -r VulkanMC/UI build/win/
+          cp VulkanMC/config.toml build/win/
       - name: Create tar.gz for Linux
         run: tar -czvf build/VulkanMC-linux-x64.tar.gz -C build/linux .
       - name: Install fpm
