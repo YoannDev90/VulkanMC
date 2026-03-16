@@ -21,7 +21,7 @@ public partial class VulkanEngine
 
         var subpass = new SubpassDescription { PipelineBindPoint = PipelineBindPoint.Graphics, ColorAttachmentCount = 1, PColorAttachments = &colorAttRef, PDepthStencilAttachment = &depthAttRef, PResolveAttachments = &colorResRef };
         var dependency = new SubpassDependency { SrcSubpass = Vk.SubpassExternal, DstSubpass = 0, SrcStageMask = PipelineStageFlags.ColorAttachmentOutputBit | PipelineStageFlags.EarlyFragmentTestsBit, SrcAccessMask = 0, DstStageMask = PipelineStageFlags.ColorAttachmentOutputBit | PipelineStageFlags.EarlyFragmentTestsBit, DstAccessMask = AccessFlags.ColorAttachmentWriteBit | AccessFlags.DepthStencilAttachmentWriteBit };
-        var atts = stackalloc [] { colorAtt, depthAtt, colorRes };
+        var atts = stackalloc[] { colorAtt, depthAtt, colorRes };
         var info = new RenderPassCreateInfo { SType = StructureType.RenderPassCreateInfo, AttachmentCount = 3, PAttachments = atts, SubpassCount = 1, PSubpasses = &subpass, DependencyCount = 1, PDependencies = &dependency };
         if (_vk!.CreateRenderPass(_device, &info, null, out _renderPass) != Result.Success) throw new Exception("Failed to create RP!");
     }

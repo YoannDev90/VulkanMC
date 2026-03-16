@@ -16,7 +16,7 @@ public class SimplexNoise
         var random = new Random(seed);
         var p = new byte[256];
         for (int i = 0; i < 256; i++) p[i] = (byte)i;
-        
+
         // Shuffle
         for (int i = 255; i > 0; i--)
         {

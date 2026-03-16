@@ -1,8 +1,6 @@
-# Format all C# files in the project using dotnet-format
-find ../VulkanMC -name '*.cs' -not -path '../VulkanMC/obj/*' -not -path '../VulkanMC/bin/*' -not -name '*.csproj' | while read file; do
-    echo "Formatting $file"
-    dotnet format "$file"
-done
+# Format the project using dotnet-format (target the .csproj file)
+echo "Formatting project ../VulkanMC/VulkanMC/VulkanMC.csproj"
+dotnet format ../VulkanMC/VulkanMC/VulkanMC.csproj
 
 # Custom rule: Remove text between [] only in Logger lines, ignore obj/bin/*.csproj
 find ../VulkanMC -name '*.cs' -not -path '../VulkanMC/obj/*' -not -path '../VulkanMC/bin/*' -not -name '*.csproj' | while read file; do
