@@ -41,6 +41,26 @@ jobs:
           mkdir -p rpm/usr/local/bin
           cp build/linux/VulkanMC rpm/usr/local/bin/
           fpm -s dir -t rpm -n VulkanMC -v 1.0.0 rpm/usr/local/bin/VulkanMC
+
+    # Rename all artifacts to lowercase (except extensions like .AppImage)
+      - name: Rename Windows artifacts
+        run: |
+          if [ -f build/VulkanMC-win-x64.exe ]; then mv build/VulkanMC-win-x64.exe build/vulkanmc-win-x64.exe; fi
+          if [ -f build/VulkanMC-win-x64.msi ]; then mv build/VulkanMC-win-x64.msi build/vulkanmc-win-x64.msi; fi
+          if [ -f build/VulkanMC-win-x64.zip ]; then mv build/VulkanMC-win-x64.zip build/vulkanmc-win-x64.zip; fi
+      - name: Rename Linux artifacts
+        run: |
+          if [ -f vulkanmc_1.0.0_amd64.deb ]; then mv vulkanmc_1.0.0_amd64.deb vulkanmc_1.0.0_amd64.deb; fi
+          if [ -f vulkanmc-1.0.0-1.x86_64.rpm ]; then mv vulkanmc-1.0.0-1.x86_64.rpm vulkanmc-1.0.0-1.x86_64.rpm; fi
+          if [ -f build/VulkanMC-linux-x64.tar.gz ]; then mv build/VulkanMC-linux-x64.tar.gz build/vulkanmc-linux-x64.tar.gz; fi
+          if [ -f build/VulkanMC-linux-x64.snap ]; then mv build/VulkanMC-linux-x64.snap build/vulkanmc-linux-x64.snap; fi
+          if [ -f build/VulkanMC-linux-x64.AppImage ]; then mv build/VulkanMC-linux-x64.AppImage build/vulkanmc-linux-x64.AppImage; fi
+      - name: Rename macOS artifacts
+        run: |
+          if [ -f build/VulkanMC-osx-x64.zip ]; then mv build/VulkanMC-osx-x64.zip build/vulkanmc-osx-x64.zip; fi
+          if [ -f build/VulkanMC-osx-x64.dmg ]; then mv build/VulkanMC-osx-x64.dmg build/vulkanmc-osx-x64.dmg; fi
+          if [ -f build/VulkanMC-osx-x64.pkg ]; then mv build/VulkanMC-osx-x64.pkg build/vulkanmc-osx-x64.pkg; fi
+
       - name: Create Release
         id: create_release
         uses: actions/create-release@v1
@@ -70,7 +90,7 @@ jobs:
         run: if [ -f vulkanmc_1.0.0_amd64.deb ]; then echo "exists=true" >> $GITHUB_OUTPUT; else echo "exists=false" >> $GITHUB_OUTPUT; fi
       - name: Check rpm exists
         id: rpm_exists
-        run: if [ -f VulkanMC-1.0.0-1.x86_64.rpm ]; then echo "exists=true" >> $GITHUB_OUTPUT; else echo "exists=false" >> $GITHUB_OUTPUT; fi
+        run: if [ -f vulkanmc-1.0.0-1.x86_64.rpm ]; then echo "exists=true" >> $GITHUB_OUTPUT; else echo "exists=false" >> $GITHUB_OUTPUT; fi
       - name: Check appimage exists
         id: appimage_exists
         run: if [ -f build/vulkanmc-linux-x64.AppImage ]; then echo "exists=true" >> $GITHUB_OUTPUT; else echo "exists=false" >> $GITHUB_OUTPUT; fi
