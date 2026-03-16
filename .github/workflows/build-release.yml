@@ -47,18 +47,79 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
-          tag_name: v1.0.0
-          release_name: VulkanMC v1.0.0
+          tag_name: v${{ github.run_number }}
+          release_name: VulkanMC v${{ github.run_number }}
           draft: false
           prerelease: false
+      # Windows
+      - name: Check exe exists
+        id: exe_exists
+        run: if [ -f build/vulkanmc-win-x64.exe ]; then echo "exists=true" >> $GITHUB_OUTPUT; else echo "exists=false" >> $GITHUB_OUTPUT; fi
+      - name: Check msi exists
+        id: msi_exists
+        run: if [ -f build/vulkanmc-win-x64.msi ]; then echo "exists=true" >> $GITHUB_OUTPUT; else echo "exists=false" >> $GITHUB_OUTPUT; fi
+      - name: Check winzip exists
+        id: winzip_exists
+        run: if [ -f build/vulkanmc-win-x64.zip ]; then echo "exists=true" >> $GITHUB_OUTPUT; else echo "exists=false" >> $GITHUB_OUTPUT; fi
+      # Linux
       - name: Check tar.gz exists
         id: tar_exists
-        run: |
-          if [ -f build/VulkanMC-linux-x64.tar.gz ]; then
-            echo "exists=true" >> $GITHUB_OUTPUT
-          else
-            echo "exists=false" >> $GITHUB_OUTPUT
-          fi
+        run: if [ -f build/vulkanmc-linux-x64.tar.gz ]; then echo "exists=true" >> $GITHUB_OUTPUT; else echo "exists=false" >> $GITHUB_OUTPUT; fi
+      - name: Check deb exists
+        id: deb_exists
+        run: if [ -f vulkanmc_1.0.0_amd64.deb ]; then echo "exists=true" >> $GITHUB_OUTPUT; else echo "exists=false" >> $GITHUB_OUTPUT; fi
+      - name: Check rpm exists
+        id: rpm_exists
+        run: if [ -f VulkanMC-1.0.0-1.x86_64.rpm ]; then echo "exists=true" >> $GITHUB_OUTPUT; else echo "exists=false" >> $GITHUB_OUTPUT; fi
+      - name: Check appimage exists
+        id: appimage_exists
+        run: if [ -f build/vulkanmc-linux-x64.AppImage ]; then echo "exists=true" >> $GITHUB_OUTPUT; else echo "exists=false" >> $GITHUB_OUTPUT; fi
+      - name: Check snap exists
+        id: snap_exists
+        run: if [ -f build/vulkanmc-linux-x64.snap ]; then echo "exists=true" >> $GITHUB_OUTPUT; else echo "exists=false" >> $GITHUB_OUTPUT; fi
+      # macOS
+      - name: Check maczip exists
+        id: maczip_exists
+        run: if [ -f build/vulkanmc-osx-x64.zip ]; then echo "exists=true" >> $GITHUB_OUTPUT; else echo "exists=false" >> $GITHUB_OUTPUT; fi
+      - name: Check dmg exists
+        id: dmg_exists
+        run: if [ -f build/vulkanmc-osx-x64.dmg ]; then echo "exists=true" >> $GITHUB_OUTPUT; else echo "exists=false" >> $GITHUB_OUTPUT; fi
+      - name: Check pkg exists
+        id: pkg_exists
+        run: if [ -f build/vulkanmc-osx-x64.pkg ]; then echo "exists=true" >> $GITHUB_OUTPUT; else echo "exists=false" >> $GITHUB_OUTPUT; fi
+
+    # Windows
+      - name: Upload exe to Release
+        if: ${{ steps.exe_exists.outputs.exists == 'true' }}
+        uses: actions/upload-release-asset@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          upload_url: ${{ steps.create_release.outputs.upload_url }}
+          asset_path: build/vulkanmc-win-x64.exe
+          asset_name: vulkanmc-win-x64.exe
+          asset_content_type: application/octet-stream
+      - name: Upload msi to Release
+        if: ${{ steps.msi_exists.outputs.exists == 'true' }}
+        uses: actions/upload-release-asset@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          upload_url: ${{ steps.create_release.outputs.upload_url }}
+          asset_path: build/vulkanmc-win-x64.msi
+          asset_name: vulkanmc-win-x64.msi
+          asset_content_type: application/octet-stream
+      - name: Upload winzip to Release
+        if: ${{ steps.winzip_exists.outputs.exists == 'true' }}
+        uses: actions/upload-release-asset@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          upload_url: ${{ steps.create_release.outputs.upload_url }}
+          asset_path: build/vulkanmc-win-x64.zip
+          asset_name: vulkanmc-win-x64.zip
+          asset_content_type: application/zip
+    # Linux
       - name: Upload tar.gz to Release
         if: ${{ steps.tar_exists.outputs.exists == 'true' }}
         uses: actions/upload-release-asset@v1
@@ -66,18 +127,10 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           upload_url: ${{ steps.create_release.outputs.upload_url }}
-          asset_path: build/VulkanMC-linux-x64.tar.gz
-          asset_name: VulkanMC-linux-x64.tar.gz
+          asset_path: build/vulkanmc-linux-x64.tar.gz
+          asset_name: vulkanmc-linux-x64.tar.gz
           asset_content_type: application/gzip
-      - name: Check DEB file exists
-        id: deb_exists
-        run: |
-          if [ -f vulkanmc_1.0.0_amd64.deb ]; then
-            echo "exists=true" >> $GITHUB_OUTPUT
-          else
-            echo "exists=false" >> $GITHUB_OUTPUT
-          fi
-      - name: Upload DEB to Release
+      - name: Upload deb to Release
         if: ${{ steps.deb_exists.outputs.exists == 'true' }}
         uses: actions/upload-release-asset@v1
         env:
@@ -87,57 +140,64 @@ jobs:
           asset_path: vulkanmc_1.0.0_amd64.deb
           asset_name: vulkanmc_1.0.0_amd64.deb
           asset_content_type: application/octet-stream
-      - name: Check RPM file exists
-        id: rpm_exists
-        run: |
-          if [ -f VulkanMC-1.0.0-1.x86_64.rpm ]; then
-            echo "exists=true" >> $GITHUB_OUTPUT
-          else
-            echo "exists=false" >> $GITHUB_OUTPUT
-          fi
-      - name: Upload RPM to Release
+      - name: Upload rpm to Release
         if: ${{ steps.rpm_exists.outputs.exists == 'true' }}
         uses: actions/upload-release-asset@v1
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           upload_url: ${{ steps.create_release.outputs.upload_url }}
-          asset_path: VulkanMC-1.0.0-1.x86_64.rpm
-          asset_name: VulkanMC-1.0.0-1.x86_64.rpm
+          asset_path: vulkanmc-1.0.0-1.x86_64.rpm
+          asset_name: vulkanmc-1.0.0-1.x86_64.rpm
           asset_content_type: application/octet-stream
-      - name: Check exe exists
-        id: exe_exists
-        run: |
-          if [ -f build/VulkanMC-win-x64.exe ]; then
-            echo "exists=true" >> $GITHUB_OUTPUT
-          else
-            echo "exists=false" >> $GITHUB_OUTPUT
-          fi
-      - name: Upload exe to Release
-        if: ${{ steps.exe_exists.outputs.exists == 'true' }}
+      - name: Upload appimage to Release
+        if: ${{ steps.appimage_exists.outputs.exists == 'true' }}
         uses: actions/upload-release-asset@v1
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           upload_url: ${{ steps.create_release.outputs.upload_url }}
-          asset_path: build/VulkanMC-win-x64.exe
-          asset_name: VulkanMC-win-x64.exe
+          asset_path: build/vulkanmc-linux-x64.AppImage
+          asset_name: vulkanmc-linux-x64.AppImage
           asset_content_type: application/octet-stream
-      - name: Check zip exists
-        id: zip_exists
-        run: |
-          if [ -f build/VulkanMC-osx-x64.zip ]; then
-            echo "exists=true" >> $GITHUB_OUTPUT
-          else
-            echo "exists=false" >> $GITHUB_OUTPUT
-          fi
-      - name: Upload zip to Release
-        if: ${{ steps.zip_exists.outputs.exists == 'true' }}
+      - name: Upload snap to Release
+        if: ${{ steps.snap_exists.outputs.exists == 'true' }}
         uses: actions/upload-release-asset@v1
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           upload_url: ${{ steps.create_release.outputs.upload_url }}
-          asset_path: build/VulkanMC-osx-x64.zip
-          asset_name: VulkanMC-osx-x64.zip
+          asset_path: build/vulkanmc-linux-x64.snap
+          asset_name: vulkanmc-linux-x64.snap
+          asset_content_type: application/octet-stream
+    # macOS
+      - name: Upload maczip to Release
+        if: ${{ steps.maczip_exists.outputs.exists == 'true' }}
+        uses: actions/upload-release-asset@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          upload_url: ${{ steps.create_release.outputs.upload_url }}
+          asset_path: build/vulkanmc-osx-x64.zip
+          asset_name: vulkanmc-osx-x64.zip
           asset_content_type: application/zip
+      - name: Upload dmg to Release
+        if: ${{ steps.dmg_exists.outputs.exists == 'true' }}
+        uses: actions/upload-release-asset@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          upload_url: ${{ steps.create_release.outputs.upload_url }}
+          asset_path: build/vulkanmc-osx-x64.dmg
+          asset_name: vulkanmc-osx-x64.dmg
+          asset_content_type: application/octet-stream
+      - name: Upload pkg to Release
+        if: ${{ steps.pkg_exists.outputs.exists == 'true' }}
+        uses: actions/upload-release-asset@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          upload_url: ${{ steps.create_release.outputs.upload_url }}
+          asset_path: build/vulkanmc-osx-x64.pkg
+          asset_name: vulkanmc-osx-x64.pkg
+          asset_content_type: application/octet-stream
