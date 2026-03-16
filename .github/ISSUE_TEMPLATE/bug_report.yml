@@ -1,0 +1,48 @@
+name: Bug Report
+description: Report a bug or issue
+labels: bug
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Please describe the bug in detail.
+  - type: input
+    id: summary
+    attributes:
+      label: Summary
+      description: Summarize the issue in one sentence.
+      placeholder: "Game crashes on launch..."
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to Reproduce
+      description: List the steps to reproduce the bug.
+      placeholder: "1. Start the game\n2. Click Play\n3. Crash"
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected Result
+      description: What did you expect to happen?
+      placeholder: "The game should start normally."
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual Result
+      description: What actually happened?
+      placeholder: "The game crashed with an error..."
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs
+      description: Add logs or error messages.
+      placeholder: "Exception: ..."
+    validations:
+      required: false

@@ -1,0 +1,72 @@
+name: Build and Release
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build-linux:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+      - name: Build Linux
+        run: dotnet publish VulkanMC/VulkanMC.csproj -c Release -r linux-x64 --self-contained -o build/linux
+      - name: Build Windows (cross-compile)
+        run: dotnet publish VulkanMC/VulkanMC.csproj -c Release -r win-x64 --self-contained -o build/win
+      - name: Rename Windows exe
+        run: mv build/win/VulkanMC.exe build/VulkanMC-win-x64.exe
+      - name: Create tar.gz
+        run: tar -czvf build/VulkanMC-linux-x64.tar.gz -C build/linux .
+      - name: Install fpm
+        run: sudo gem install --no-document fpm
+      - name: Create DEB
+        run: |
+          mkdir -p deb/usr/local/bin
+          cp build/linux/VulkanMC deb/usr/local/bin/
+          fpm -s dir -t deb -n VulkanMC -v 1.0.0 deb/usr/local/bin/VulkanMC
+      - name: Create RPM
+        run: |
+          mkdir -p rpm/usr/local/bin
+          cp build/linux/VulkanMC rpm/usr/local/bin/
+          fpm -s dir -t rpm -n VulkanMC -v 1.0.0 rpm/usr/local/bin/VulkanMC
+      - name: Upload Linux tar.gz Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: VulkanMC-linux-x64-tar
+          path: build/VulkanMC-linux-x64.tar.gz
+      - name: Upload DEB Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: VulkanMC-linux-x64-deb
+          path: VulkanMC_1.0.0_amd64.deb
+      - name: Upload RPM Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: VulkanMC-linux-x64-rpm
+          path: VulkanMC-1.0.0-1.x86_64.rpm
+      - name: Upload Windows exe Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: VulkanMC-win-x64-exe
+          path: build/VulkanMC-win-x64.exe
+
+  build-macos:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.0'
+      - name: Build
+        run: dotnet publish VulkanMC/VulkanMC.csproj -c Release -r osx-x64 --self-contained -o build/mac
+      - name: Create ZIP
+        run: zip -r build/VulkanMC-osx-x64.zip build/mac
+      - name: Upload Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: VulkanMC-osx-x64
+          path: build/VulkanMC-osx-x64.zip
