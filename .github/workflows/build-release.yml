@@ -54,6 +54,43 @@ jobs:
           draft: false
           prerelease: false
 
+      # ----------- CHECK FILES -----------
+      - name: Check exe exists
+        id: exe_exists
+        run: |
+          if [ -f build/vulkanmc-win-x64.exe ]; then
+            echo "exists=true" >> $GITHUB_OUTPUT
+          else
+            echo "exists=false" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Check tar.gz exists
+        id: tar_exists
+        run: |
+          if [ -f build/vulkanmc-linux-x64.tar.gz ]; then
+            echo "exists=true" >> $GITHUB_OUTPUT
+          else
+            echo "exists=false" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Check deb exists
+        id: deb_exists
+        run: |
+          if [ -f vulkanmc_1.0.0_amd64.deb ]; then
+            echo "exists=true" >> $GITHUB_OUTPUT
+          else
+            echo "exists=false" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Check rpm exists
+        id: rpm_exists
+        run: |
+          if [ -f vulkanmc-1.0.0-1.x86_64.rpm ]; then
+            echo "exists=true" >> $GITHUB_OUTPUT
+          else
+            echo "exists=false" >> $GITHUB_OUTPUT
+          fi
+
       # ----------- UPLOAD -----------
       - name: Upload Windows exe
         if: ${{ steps.exe_exists.outputs.exists == 'true' }}
