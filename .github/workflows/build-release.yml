@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
 
 jobs:
-  build-linux:
+  build-and-release:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -18,7 +18,11 @@ jobs:
         run: dotnet publish VulkanMC/VulkanMC.csproj -c Release -r win-x64 --self-contained -o build/win
       - name: Rename Windows exe
         run: mv build/win/VulkanMC.exe build/VulkanMC-win-x64.exe
-      - name: Create tar.gz
+      - name: Build macOS (cross-compile)
+        run: dotnet publish VulkanMC/VulkanMC.csproj -c Release -r osx-x64 --self-contained -o build/mac
+      - name: Create ZIP for macOS
+        run: zip -r build/VulkanMC-osx-x64.zip build/mac
+      - name: Create tar.gz for Linux
         run: tar -czvf build/VulkanMC-linux-x64.tar.gz -C build/linux .
       - name: Install fpm
         run: sudo gem install --no-document fpm
@@ -32,41 +36,58 @@ jobs:
           mkdir -p rpm/usr/local/bin
           cp build/linux/VulkanMC rpm/usr/local/bin/
           fpm -s dir -t rpm -n VulkanMC -v 1.0.0 rpm/usr/local/bin/VulkanMC
-      - name: Upload Linux tar.gz Artifact
-        uses: actions/upload-artifact@v4
+      - name: Create Release
+        id: create_release
+        uses: actions/create-release@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
-          name: VulkanMC-linux-x64-tar
-          path: build/VulkanMC-linux-x64.tar.gz
-      - name: Upload DEB Artifact
-        uses: actions/upload-artifact@v4
+          tag_name: v1.0.0
+          release_name: VulkanMC v1.0.0
+          draft: false
+          prerelease: false
+      - name: Upload Linux tar.gz to Release
+        uses: actions/upload-release-asset@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
-          name: VulkanMC-linux-x64-deb
-          path: VulkanMC_1.0.0_amd64.deb
-      - name: Upload RPM Artifact
-        uses: actions/upload-artifact@v4
+          upload_url: ${{ steps.create_release.outputs.upload_url }}
+          asset_path: build/VulkanMC-linux-x64.tar.gz
+          asset_name: VulkanMC-linux-x64.tar.gz
+          asset_content_type: application/gzip
+      - name: Upload DEB to Release
+        uses: actions/upload-release-asset@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
-          name: VulkanMC-linux-x64-rpm
-          path: VulkanMC-1.0.0-1.x86_64.rpm
-      - name: Upload Windows exe Artifact
-        uses: actions/upload-artifact@v4
+          upload_url: ${{ steps.create_release.outputs.upload_url }}
+          asset_path: VulkanMC_1.0.0_amd64.deb
+          asset_name: VulkanMC_1.0.0_amd64.deb
+          asset_content_type: application/octet-stream
+      - name: Upload RPM to Release
+        uses: actions/upload-release-asset@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
-          name: VulkanMC-win-x64-exe
-          path: build/VulkanMC-win-x64.exe
-
-  build-macos:
-    runs-on: macos-latest
-    steps:
-      - uses: actions/checkout@v4
-      - name: Setup .NET
-        uses: actions/setup-dotnet@v4
+          upload_url: ${{ steps.create_release.outputs.upload_url }}
+          asset_path: VulkanMC-1.0.0-1.x86_64.rpm
+          asset_name: VulkanMC-1.0.0-1.x86_64.rpm
+          asset_content_type: application/octet-stream
+      - name: Upload Windows exe to Release
+        uses: actions/upload-release-asset@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
-          dotnet-version: '8.0.0'
-      - name: Build
-        run: dotnet publish VulkanMC/VulkanMC.csproj -c Release -r osx-x64 --self-contained -o build/mac
-      - name: Create ZIP
-        run: zip -r build/VulkanMC-osx-x64.zip build/mac
-      - name: Upload Artifact
-        uses: actions/upload-artifact@v4
+          upload_url: ${{ steps.create_release.outputs.upload_url }}
+          asset_path: build/VulkanMC-win-x64.exe
+          asset_name: VulkanMC-win-x64.exe
+          asset_content_type: application/octet-stream
+      - name: Upload macOS zip to Release
+        uses: actions/upload-release-asset@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
-          name: VulkanMC-osx-x64
-          path: build/VulkanMC-osx-x64.zip
+          upload_url: ${{ steps.create_release.outputs.upload_url }}
+          asset_path: build/VulkanMC-osx-x64.zip
+          asset_name: VulkanMC-osx-x64.zip
+          asset_content_type: application/zip
