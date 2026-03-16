@@ -29,12 +29,6 @@ jobs:
             cp build/win/VulkanMC.exe build/vulkanmc-win-x64.exe
           fi
 
-      - name: Copy assets to build/win
-        run: |
-          cp -r VulkanMC/VulkanMC/Fonts build/win/
-          cp -r VulkanMC/VulkanMC/Textures build/win/
-          cp -r VulkanMC/VulkanMC/UI build/win/
-          cp VulkanMC/VulkanMC/config.toml build/win/
       - name: Create tar.gz for Linux
         run: tar -czvf build/VulkanMC-linux-x64.tar.gz -C build/linux .
       - name: Install fpm
