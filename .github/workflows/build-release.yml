@@ -17,49 +17,79 @@ jobs:
         uses: actions/setup-dotnet@v4
         with:
           dotnet-version: '8.0.x'
+
+      # ----------- BUILD STEPS -----------
       - name: Build Linux
         run: dotnet publish VulkanMC/VulkanMC.csproj -c Release -r linux-x64 --self-contained -o build/linux
-      - name: Build Windows (cross-compile)
+      - name: Build Windows
         run: dotnet publish VulkanMC/VulkanMC.csproj -c Release -r win-x64 --self-contained -o build/win
-      - name: Rename Windows exe
-        run: mv build/win/VulkanMC.exe build/VulkanMC-win-x64.exe
-      - name: Build macOS (cross-compile)
+      - name: Build macOS
         run: dotnet publish VulkanMC/VulkanMC.csproj -c Release -r osx-x64 --self-contained -o build/mac
-      - name: Create ZIP for macOS
-        run: zip -r build/VulkanMC-osx-x64.zip build/mac
-      - name: Create tar.gz for Linux
-        run: tar -czvf build/VulkanMC-linux-x64.tar.gz -C build/linux .
+
+      - name: Create ZIP/Tarballs
+        run: |
+          zip -r build/VulkanMC-win-x64.zip build/win
+          zip -r build/VulkanMC-osx-x64.zip build/mac
+          tar -czvf build/VulkanMC-linux-x64.tar.gz -C build/linux .
+
+      - name: Install WiX Toolset
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y wixl
+      - name: Build MSI for Windows
+        run: |
+          wixl -o build/VulkanMC-win-x64.msi wix/VulkanMC.wxs || echo 'MSI build failed'
+
       - name: Install fpm
         run: sudo gem install --no-document fpm
-      - name: Create DEB
+      - name: Create DEB & RPM
         run: |
-          mkdir -p deb/usr/local/bin
-          cp build/linux/VulkanMC deb/usr/local/bin/
-          fpm -s dir -t deb -n VulkanMC -v 1.0.0 deb/usr/local/bin/VulkanMC
-      - name: Create RPM
-        run: |
-          mkdir -p rpm/usr/local/bin
-          cp build/linux/VulkanMC rpm/usr/local/bin/
-          fpm -s dir -t rpm -n VulkanMC -v 1.0.0 rpm/usr/local/bin/VulkanMC
+          mkdir -p pkg/usr/local/bin
+          cp build/linux/* pkg/usr/local/bin/
+          fpm -s dir -t deb -n vulkanmc -v 1.0.0 -C pkg .
+          fpm -s dir -t rpm -n vulkanmc -v 1.0.0 -C pkg .
 
-    # Rename all artifacts to lowercase (except extensions like .AppImage)
-      - name: Rename Windows artifacts
+      - name: Install AppImage tool
         run: |
-          if [ -f build/VulkanMC-win-x64.exe ]; then mv build/VulkanMC-win-x64.exe build/vulkanmc-win-x64.exe; fi
-          if [ -f build/VulkanMC-win-x64.msi ]; then mv build/VulkanMC-win-x64.msi build/vulkanmc-win-x64.msi; fi
-          if [ -f build/VulkanMC-win-x64.zip ]; then mv build/VulkanMC-win-x64.zip build/vulkanmc-win-x64.zip; fi
-      - name: Rename Linux artifacts
+          sudo apt-get update
+          sudo apt-get install -y appimagetool
+      - name: Build AppImage
         run: |
-          if [ -f vulkanmc-1.0.0-1.x86_64.rpm ]; then mv vulkanmc-1.0.0-1.x86_64.rpm vulkanmc-1.0.0-1.x86_64.rpm; fi
-          if [ -f build/VulkanMC-linux-x64.tar.gz ]; then mv build/VulkanMC-linux-x64.tar.gz build/vulkanmc-linux-x64.tar.gz; fi
-          if [ -f build/VulkanMC-linux-x64.snap ]; then mv build/VulkanMC-linux-x64.snap build/vulkanmc-linux-x64.snap; fi
-          if [ -f build/VulkanMC-linux-x64.AppImage ]; then mv build/VulkanMC-linux-x64.AppImage build/vulkanmc-linux-x64.AppImage; fi
-      - name: Rename macOS artifacts
-        run: |
-          if [ -f build/VulkanMC-osx-x64.zip ]; then mv build/VulkanMC-osx-x64.zip build/vulkanmc-osx-x64.zip; fi
-          if [ -f build/VulkanMC-osx-x64.dmg ]; then mv build/VulkanMC-osx-x64.dmg build/vulkanmc-osx-x64.dmg; fi
-          if [ -f build/VulkanMC-osx-x64.pkg ]; then mv build/VulkanMC-osx-x64.pkg build/vulkanmc-osx-x64.pkg; fi
+          mkdir -p AppDir/usr/bin
+          cp build/linux/* AppDir/usr/bin/
+          (cd AppDir && appimagetool . ../build/VulkanMC-linux-x64.AppImage) || echo 'AppImage build failed'
 
+      - name: Install Snapcraft
+        run: sudo snap install snapcraft --classic
+      - name: Build Snap
+        run: |
+          snapcraft --output build/VulkanMC-linux-x64.snap || echo 'Snap build failed'
+
+      - name: Install macOS packaging tools
+        run: |
+          npm install -g create-dmg
+      - name: Build DMG & PKG
+        run: |
+          create-dmg build/mac build/VulkanMC-osx-x64.dmg || echo 'DMG build failed'
+          pkgbuild --root build/mac --identifier com.vulkanmc --version 1.0.0 build/VulkanMC-osx-x64.pkg || echo 'PKG build failed'
+
+      # ----------- RENAME -----------
+      - name: Rename artifacts
+        run: |
+          # Windows
+          [ -f build/VulkanMC-win-x64.exe ] && mv build/VulkanMC-win-x64.exe build/vulkanmc-win-x64.exe || true
+          [ -f build/VulkanMC-win-x64.zip ] && mv build/VulkanMC-win-x64.zip build/vulkanmc-win-x64.zip || true
+          [ -f build/VulkanMC-win-x64.msi ] && mv build/VulkanMC-win-x64.msi build/vulkanmc-win-x64.msi || true
+          # Linux
+          [ -f build/VulkanMC-linux-x64.tar.gz ] && mv build/VulkanMC-linux-x64.tar.gz build/vulkanmc-linux-x64.tar.gz || true
+          [ -f build/VulkanMC-linux-x64.AppImage ] && mv build/VulkanMC-linux-x64.AppImage build/vulkanmc-linux-x64.AppImage || true
+          [ -f build/VulkanMC-linux-x64.snap ] && mv build/VulkanMC-linux-x64.snap build/vulkanmc-linux-x64.snap || true
+          # macOS
+          [ -f build/VulkanMC-osx-x64.zip ] && mv build/VulkanMC-osx-x64.zip build/vulkanmc-osx-x64.zip || true
+          [ -f build/VulkanMC-osx-x64.dmg ] && mv build/VulkanMC-osx-x64.dmg build/vulkanmc-osx-x64.dmg || true
+          [ -f build/VulkanMC-osx-x64.pkg ] && mv build/VulkanMC-osx-x64.pkg build/vulkanmc-osx-x64.pkg || true
+
+      # ----------- RELEASE -----------
       - name: Create Release
         id: create_release
         uses: actions/create-release@v1
@@ -70,153 +100,34 @@ jobs:
           release_name: VulkanMC v${{ github.run_number }}
           draft: false
           prerelease: false
-      # Windows
-      - name: Check exe exists
-        id: exe_exists
-        run: if [ -f build/vulkanmc-win-x64.exe ]; then echo "exists=true" >> $GITHUB_OUTPUT; else echo "exists=false" >> $GITHUB_OUTPUT; fi
-      - name: Check msi exists
-        id: msi_exists
-        run: if [ -f build/vulkanmc-win-x64.msi ]; then echo "exists=true" >> $GITHUB_OUTPUT; else echo "exists=false" >> $GITHUB_OUTPUT; fi
-      - name: Check winzip exists
-        id: winzip_exists
-        run: if [ -f build/vulkanmc-win-x64.zip ]; then echo "exists=true" >> $GITHUB_OUTPUT; else echo "exists=false" >> $GITHUB_OUTPUT; fi
-      # Linux
-      - name: Check tar.gz exists
-        id: tar_exists
-        run: if [ -f build/vulkanmc-linux-x64.tar.gz ]; then echo "exists=true" >> $GITHUB_OUTPUT; else echo "exists=false" >> $GITHUB_OUTPUT; fi
-      - name: Check deb exists
-        id: deb_exists
-        run: if [ -f vulkanmc_1.0.0_amd64.deb ]; then echo "exists=true" >> $GITHUB_OUTPUT; else echo "exists=false" >> $GITHUB_OUTPUT; fi
-      - name: Check rpm exists
-        id: rpm_exists
-        run: if [ -f vulkanmc-1.0.0-1.x86_64.rpm ]; then echo "exists=true" >> $GITHUB_OUTPUT; else echo "exists=false" >> $GITHUB_OUTPUT; fi
-      - name: Check appimage exists
-        id: appimage_exists
-        run: if [ -f build/vulkanmc-linux-x64.AppImage ]; then echo "exists=true" >> $GITHUB_OUTPUT; else echo "exists=false" >> $GITHUB_OUTPUT; fi
-      - name: Check snap exists
-        id: snap_exists
-        run: if [ -f build/vulkanmc-linux-x64.snap ]; then echo "exists=true" >> $GITHUB_OUTPUT; else echo "exists=false" >> $GITHUB_OUTPUT; fi
-      # macOS
-      - name: Check maczip exists
-        id: maczip_exists
-        run: if [ -f build/vulkanmc-osx-x64.zip ]; then echo "exists=true" >> $GITHUB_OUTPUT; else echo "exists=false" >> $GITHUB_OUTPUT; fi
-      - name: Check dmg exists
-        id: dmg_exists
-        run: if [ -f build/vulkanmc-osx-x64.dmg ]; then echo "exists=true" >> $GITHUB_OUTPUT; else echo "exists=false" >> $GITHUB_OUTPUT; fi
-      - name: Check pkg exists
-        id: pkg_exists
-        run: if [ -f build/vulkanmc-osx-x64.pkg ]; then echo "exists=true" >> $GITHUB_OUTPUT; else echo "exists=false" >> $GITHUB_OUTPUT; fi
 
-    # Windows
-      - name: Upload exe to Release
-        if: ${{ steps.exe_exists.outputs.exists == 'true' }}
-        uses: actions/upload-release-asset@v1
+      # ----------- UPLOAD -----------
+      - name: Upload Windows
+        run: |
+          for f in build/vulkanmc-win-x64.*; do
+            if [ -f "$f" ]; then
+              gh release upload v${{ github.run_number }} "$f" --clobber
+            fi
+          done
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        with:
-          upload_url: ${{ steps.create_release.outputs.upload_url }}
-          asset_path: build/vulkanmc-win-x64.exe
-          asset_name: vulkanmc-win-x64.exe
-          asset_content_type: application/octet-stream
-      - name: Upload msi to Release
-        if: ${{ steps.msi_exists.outputs.exists == 'true' }}
-        uses: actions/upload-release-asset@v1
+
+      - name: Upload Linux
+        run: |
+          for f in build/vulkanmc-linux-x64.* *.deb *.rpm; do
+            if [ -f "$f" ]; then
+              gh release upload v${{ github.run_number }} "$f" --clobber
+            fi
+          done
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        with:
-          upload_url: ${{ steps.create_release.outputs.upload_url }}
-          asset_path: build/vulkanmc-win-x64.msi
-          asset_name: vulkanmc-win-x64.msi
-          asset_content_type: application/octet-stream
-      - name: Upload winzip to Release
-        if: ${{ steps.winzip_exists.outputs.exists == 'true' }}
-        uses: actions/upload-release-asset@v1
+
+      - name: Upload macOS
+        run: |
+          for f in build/vulkanmc-osx-x64.*; do
+            if [ -f "$f" ]; then
+              gh release upload v${{ github.run_number }} "$f" --clobber
+            fi
+          done
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        with:
-          upload_url: ${{ steps.create_release.outputs.upload_url }}
-          asset_path: build/vulkanmc-win-x64.zip
-          asset_name: vulkanmc-win-x64.zip
-          asset_content_type: application/zip
-    # Linux
-      - name: Upload tar.gz to Release
-        if: ${{ steps.tar_exists.outputs.exists == 'true' }}
-        uses: actions/upload-release-asset@v1
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        with:
-          upload_url: ${{ steps.create_release.outputs.upload_url }}
-          asset_path: build/vulkanmc-linux-x64.tar.gz
-          asset_name: vulkanmc-linux-x64.tar.gz
-          asset_content_type: application/gzip
-      - name: Upload deb to Release
-        if: ${{ steps.deb_exists.outputs.exists == 'true' }}
-        uses: actions/upload-release-asset@v1
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        with:
-          upload_url: ${{ steps.create_release.outputs.upload_url }}
-          asset_path: vulkanmc_1.0.0_amd64.deb
-          asset_name: vulkanmc_1.0.0_amd64.deb
-          asset_content_type: application/octet-stream
-      - name: Upload rpm to Release
-        if: ${{ steps.rpm_exists.outputs.exists == 'true' }}
-        uses: actions/upload-release-asset@v1
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        with:
-          upload_url: ${{ steps.create_release.outputs.upload_url }}
-          asset_path: vulkanmc-1.0.0-1.x86_64.rpm
-          asset_name: vulkanmc-1.0.0-1.x86_64.rpm
-          asset_content_type: application/octet-stream
-      - name: Upload appimage to Release
-        if: ${{ steps.appimage_exists.outputs.exists == 'true' }}
-        uses: actions/upload-release-asset@v1
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        with:
-          upload_url: ${{ steps.create_release.outputs.upload_url }}
-          asset_path: build/vulkanmc-linux-x64.AppImage
-          asset_name: vulkanmc-linux-x64.AppImage
-          asset_content_type: application/octet-stream
-      - name: Upload snap to Release
-        if: ${{ steps.snap_exists.outputs.exists == 'true' }}
-        uses: actions/upload-release-asset@v1
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        with:
-          upload_url: ${{ steps.create_release.outputs.upload_url }}
-          asset_path: build/vulkanmc-linux-x64.snap
-          asset_name: vulkanmc-linux-x64.snap
-          asset_content_type: application/octet-stream
-    # macOS
-      - name: Upload maczip to Release
-        if: ${{ steps.maczip_exists.outputs.exists == 'true' }}
-        uses: actions/upload-release-asset@v1
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        with:
-          upload_url: ${{ steps.create_release.outputs.upload_url }}
-          asset_path: build/vulkanmc-osx-x64.zip
-          asset_name: vulkanmc-osx-x64.zip
-          asset_content_type: application/zip
-      - name: Upload dmg to Release
-        if: ${{ steps.dmg_exists.outputs.exists == 'true' }}
-        uses: actions/upload-release-asset@v1
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        with:
-          upload_url: ${{ steps.create_release.outputs.upload_url }}
-          asset_path: build/vulkanmc-osx-x64.dmg
-          asset_name: vulkanmc-osx-x64.dmg
-          asset_content_type: application/octet-stream
-      - name: Upload pkg to Release
-        if: ${{ steps.pkg_exists.outputs.exists == 'true' }}
-        uses: actions/upload-release-asset@v1
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        with:
-          upload_url: ${{ steps.create_release.outputs.upload_url }}
-          asset_path: build/vulkanmc-osx-x64.pkg
-          asset_name: vulkanmc-osx-x64.pkg
-          asset_content_type: application/octet-stream
