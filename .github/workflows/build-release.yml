@@ -50,7 +50,6 @@ jobs:
           if [ -f build/VulkanMC-win-x64.zip ]; then mv build/VulkanMC-win-x64.zip build/vulkanmc-win-x64.zip; fi
       - name: Rename Linux artifacts
         run: |
-          if [ -f vulkanmc_1.0.0_amd64.deb ]; then mv vulkanmc_1.0.0_amd64.deb vulkanmc_1.0.0_amd64.deb; fi
           if [ -f vulkanmc-1.0.0-1.x86_64.rpm ]; then mv vulkanmc-1.0.0-1.x86_64.rpm vulkanmc-1.0.0-1.x86_64.rpm; fi
           if [ -f build/VulkanMC-linux-x64.tar.gz ]; then mv build/VulkanMC-linux-x64.tar.gz build/vulkanmc-linux-x64.tar.gz; fi
           if [ -f build/VulkanMC-linux-x64.snap ]; then mv build/VulkanMC-linux-x64.snap build/vulkanmc-linux-x64.snap; fi
