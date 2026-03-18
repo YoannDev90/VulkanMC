@@ -12,30 +12,32 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       
-      - name: Setup .NET + Tools
+      - name: Setup .NET
         uses: actions/setup-dotnet@v4
         with:
           dotnet-version: '8.0.x'
       
-      - name: Install dependencies
+      - name: Install tools
         run: |
           sudo gem install --no-document fpm
           sudo apt-get update && sudo apt-get install -y fakeroot zstd jq
       
-      - name: Build
-        run: chmod +x scripts/*.sh && ./scripts/build-all.sh
-        
+      - name: Build all
+        run: |
+          chmod +x .github/scripts/*.sh
+          .github/scripts/build-all.sh
+      
       - name: Package DEB
-        run: ./scripts/package-deb.sh
-        
+        run: .github/scripts/package-deb.sh
+      
       - name: Package RPM
-        run: ./scripts/package-rpm.sh
-        
+        run: .github/scripts/package-rpm.sh
+      
       - name: Package Arch
-        run: ./scripts/package-arch.sh
-        
-      - name: Create Release & Upload
+        run: .github/scripts/package-arch.sh
+      
+      - name: Upload Release
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           VERSION: v${{ github.run_number }}
-        run: ./scripts/upload-release.sh
+        run: .github/scripts/upload-release.sh
