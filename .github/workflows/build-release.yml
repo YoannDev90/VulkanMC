@@ -12,150 +12,30 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       
-      - name: Setup .NET
+      - name: Setup .NET + Tools
         uses: actions/setup-dotnet@v4
         with:
           dotnet-version: '8.0.x'
-
-      # ----------- BUILDS CROSS-PLATFORM -----------
-      - name: Build Linux x64
-        run: dotnet publish VulkanMC/VulkanMC.csproj -c Release -r linux-x64 --self-contained -o build/linux
-
-      - name: Build Windows x64
-        run: dotnet publish VulkanMC/VulkanMC.csproj -c Release -r win-x64 --self-contained -o build/win
-
-      - name: Build macOS x64
-        run: dotnet publish VulkanMC/VulkanMC.csproj -c Release -r osx-x64 --self-contained -o build/osx
-
-      - name: Build macOS ARM64
-        run: dotnet publish VulkanMC/VulkanMC.csproj -c Release -r osx-arm64 --self-contained -o build/osx-arm64
-
-      # ----------- BINAIRES PRINCIPAUX -----------
-      - name: Create final executables
-        run: |
-          # Windows
-          cp build/win/VulkanMC.exe build/vulkanmc-win-x64.exe
-          # macOS x64
-          cp build/osx/VulkanMC build/vulkanmc-osx-x64
-          # macOS ARM64
-          cp build/osx-arm64/VulkanMC build/vulkanmc-osx-arm64
-          # Linux tar.gz
-          tar -czvf build/vulkanmc-linux-x64.tar.gz -C build/linux .
-
-      # ----------- PACKAGES LINUX -----------
-      - name: Install packaging tools
+      
+      - name: Install dependencies
         run: |
           sudo gem install --no-document fpm
-          sudo apt-get update && sudo apt-get install -y fakeroot
-
-      - name: Create DEB (Ubuntu/Debian)
-        run: |
-          mkdir -p pkg-deb/usr/local/bin
-          cp -r build/linux/* pkg-deb/usr/local/bin/
-          cd pkg-deb && fpm -s dir -t deb -n vulkanmc -v 1.0.0 -C . --prefix /usr/local \
-            --deb-priority optional --deb-compression xz --category utils
-
-      - name: Create RPM (Fedora/RHEL)
-        run: |
-          mkdir -p pkg-rpm/usr/local/bin
-          cp -r build/linux/* pkg-rpm/usr/local/bin/
-          cd pkg-rpm && fpm -s dir -t rpm -n vulkanmc -v 1.0.0 -C . --prefix /usr/local
-
-      - name: Create Arch Linux (.pkg.tar.zst)
-        run: |
-          mkdir -p pkg-arch/usr/local/bin pkg-arch/.PKGINFO
-          cp -r build/linux/* pkg-arch/usr/local/bin/
-          cat > pkg-arch/.PKGINFO << EOF
-          pkgname = vulkanmc
-          pkgver = 1.0.0
-          pkgrel = 1
-          packager = GitHub Actions
-          builddate = $(date +%s)
-          size = $(du -sb pkg-arch/usr | cut -f1)
-          arch = x86_64
-          EOF
-          (cd pkg-arch && find . | sort | xargs mtree -c -p . > .MTREE || true)
-          tar -cf - pkg-arch | zstd -19 -T0 -c > vulkanmc-1.0.0-1-x86_64.pkg.tar.zst
-
-      # ----------- RELEASE -----------
-      - name: Create Release
-        id: create_release
-        uses: actions/create-release@v1
+          sudo apt-get update && sudo apt-get install -y fakeroot zstd jq
+      
+      - name: Build
+        run: chmod +x scripts/*.sh && ./scripts/build-all.sh
+        
+      - name: Package DEB
+        run: ./scripts/package-deb.sh
+        
+      - name: Package RPM
+        run: ./scripts/package-rpm.sh
+        
+      - name: Package Arch
+        run: ./scripts/package-arch.sh
+        
+      - name: Create Release & Upload
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        with:
-          tag_name: v${{ github.run_number }}
-          release_name: VulkanMC v${{ github.run_number }}
-          draft: false
-          prerelease: false
-
-      # ----------- UPLOAD TOUS FORMATS (✅ CORRIGÉ) -----------
-      - name: Upload Windows EXE ✅
-        uses: actions/upload-release-asset@v1
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        with:
-          upload_url: ${{ steps.create_release.outputs.upload_url }}
-          asset_path: build/vulkanmc-win-x64.exe
-          asset_name: vulkanmc-win-x64.exe
-          asset_content_type: application/octet-stream
-
-      - name: Upload Linux tar.gz ✅
-        uses: actions/upload-release-asset@v1
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        with:
-          upload_url: ${{ steps.create_release.outputs.upload_url }}
-          asset_path: build/vulkanmc-linux-x64.tar.gz
-          asset_name: vulkanmc-linux-x64.tar.gz
-          asset_content_type: application/gzip
-
-      - name: Upload DEB ✅
-        uses: actions/upload-release-asset@v1
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        with:
-          upload_url: ${{ steps.create_release.outputs.upload_url }}
-          asset_path: pkg-deb/vulkanmc_1.0.0_amd64.deb
-          asset_name: vulkanmc_1.0.0_amd64.deb
-          asset_content_type: application/vnd.debian.binary-package
-
-      - name: Upload RPM ✅
-        uses: actions/upload-release-asset@v1
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        with:
-          upload_url: ${{ steps.create_release.outputs.upload_url }}
-          asset_path: pkg-rpm/vulkanmc-1.0.0-1.x86_64.rpm
-          asset_name: vulkanmc-1.0.0-1.x86_64.rpm
-          asset_content_type: application/x-rpm
-
-      - name: Upload Arch Linux ✅
-        uses: actions/upload-release-asset@v1
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        with:
-          upload_url: ${{ steps.create_release.outputs.upload_url }}
-          asset_path: vulkanmc-1.0.0-1-x86_64.pkg.tar.zst
-          asset_name: vulkanmc-1.0.0-1-x86_64.pkg.tar.zst
-          asset_content_type: application/octet-stream
-
-      - name: Upload macOS x64 ✅
-        uses: actions/upload-release-asset@v1
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        with:
-          upload_url: ${{ steps.create_release.outputs.upload_url }}
-          asset_path: build/vulkanmc-osx-x64
-          asset_name: vulkanmc-osx-x64
-          asset_content_type: application/octet-stream
-
-      - name: Upload macOS ARM64 ✅
-        uses: actions/upload-release-asset@v1
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        with:
-          upload_url: ${{ steps.create_release.outputs.upload_url }}
-          asset_path: build/vulkanmc-osx-arm64
-          asset_name: vulkanmc-osx-arm64
-          asset_content_type: application/octet-stream
+          VERSION: v${{ github.run_number }}
+        run: ./scripts/upload-release.sh
